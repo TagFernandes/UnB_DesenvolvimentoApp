@@ -1,7 +1,7 @@
 import PatterHeader from '../components/PatternHeader';
 
 import SafeAreaView from 'react-native-safe-area-view';
-import { StyleSheet, Text, TextInput, Pressable, View } from 'react-native';
+import { Image, StyleSheet, Text, TextInput, Pressable, View } from 'react-native';
 
 export default function LoginScreen() {
   return (
@@ -24,7 +24,7 @@ export default function LoginScreen() {
             <TextInput
               style={styles.input}
               placeholder="Digite seu e-mail"
-              placeholderTextColor="#1A1A1A"
+              placeholderTextColor="#AAAAAA"
             />
           </View>
         </View>
@@ -38,7 +38,7 @@ export default function LoginScreen() {
             <TextInput
               style={styles.input}
               placeholder="Digite sua senha"
-              placeholderTextColor="#1A1A1A"
+              placeholderTextColor="#AAAAAA"
               secureTextEntry
             />
           </View>
@@ -48,6 +48,22 @@ export default function LoginScreen() {
           <Pressable style={styles.loginButton}>
             <Text style={styles.loginButtonText}>Login</Text>
           </Pressable>
+        </View>
+
+        <View style={styles.signupContainer}>
+          <Text style={styles.signupText}>
+            Não tem uma conta?{' '}
+              <Text style={styles.signupLink} onPress={() => {}}>Crie agora</Text>
+ 
+          </Text>
+        </View>
+
+        <View style={styles.logoContainer}>
+          <Image
+              source={require('../../assets/images/logo_mapeei.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
         </View>
     </SafeAreaView>
   );
@@ -139,5 +155,33 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     letterSpacing: 0,
     color: '#FAFBF8',
+  },
+  logoContainer: {
+    width: '100%',
+    alignItems: 'center', // centraliza o logo horizontalmente
+    marginTop: 'auto', // empurra pro final da tela (se o container pai for flex)
+  },
+  logo: {
+    width: 96,
+    height: 54,
+    },
+  signupContainer: {
+    gap: 10,
+    alignItems: 'center',
+  },
+  signupText: {
+    fontWeight: '500',
+    fontSize: 14,
+    lineHeight: 14,
+    letterSpacing: 0,
+    color: '#1A1A1A',
+    textAlign: 'center',
+  },
+  signupLink: {
+    fontWeight: '500',
+    fontSize: 14,
+    lineHeight: 14,
+    letterSpacing: 0,
+    color: '#E96E97',
   },
 });
