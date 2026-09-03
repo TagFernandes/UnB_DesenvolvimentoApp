@@ -2,20 +2,24 @@ import { View } from "react-native";
 
 
 type ShapeProps = {
-    rotation?: string;
     color?: string;
+    flipHorizontal?:boolean
+    flipVertical?:boolean
 };
+export function ShapeB({ color='#832D51', flipHorizontal = false, flipVertical = false  }: ShapeProps) {
+    const transforms =[];
+    if (flipHorizontal) transforms.push({ scaleX: -1 });
+    if (flipVertical) transforms.push({ scaleY: -1 });
 
-export default function ShapeB({ rotation = '0deg', color='#832D51' }: ShapeProps) {
     return (
         <View 
         style={{
                 backgroundColor: color,
-                width: 103.95,
+                width: 110,
                 height: 38.25,
-                borderTopRightRadius: 74,
-                borderBottomLeftRadius: 74,
-                transform: [{ rotate: rotation}]
+                borderTopLeftRadius: 74,
+                borderBottomRightRadius: 74,
+                transform: transforms
             }}
         />        
     )
