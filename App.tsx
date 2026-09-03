@@ -1,64 +1,35 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, TextInput, Pressable } from 'react-native';
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_700Bold,
+  useFonts,
+} from '@expo-google-fonts/inter';
+import { Poppins_400Regular } from '@expo-google-fonts/poppins';
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect } from 'react';
 
-export default function Login() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Bem-vindo(a)!</Text>
+import Cadastro from './src/screens/cadastro';
 
-      <TextInput
-        style={styles.input}
-        placeholder='Email'
-        keyboardType='email-address'
-        autoCapitalize='none'
-      />
+// Mantém a splash na tela enquanto as fontes do design carregam.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
-      <TextInput
-        style={styles.input}
-        placeholder='Senha'
-        secureTextEntry
-      />
+export default function App() {
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_700Bold,
+    Poppins_400Regular,
+  });
 
-      <Pressable style={styles.button}>
-        <Text style={styles.buttonText}>Entrar</Text>
-      </Pressable>
-    </View>
-  );
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) {
+    return null;
+  }
+
+  return <Cadastro />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    backgroundColor: '#FEF8F8',
-    gap: 16
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 24,
-    color: '#1A1A2E'
-  },
-  input: {
-    height: 48,
-    borderWidth: 1,
-    borderColor: '#D1d1d6',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    fontSize: 16
-  },
-  button: {
-    height: 48,
-    backgroundColor: "#4f46e5",
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600'
-  },
-});
