@@ -9,6 +9,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 
 import Cadastro from './src/screens/cadastro';
+import Login from './src/screens/login';
 
 // Mantém a splash na tela enquanto as fontes do design carregam.
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -31,5 +32,5 @@ export default function App() {
     return null;
   }
 
-  return <Cadastro />;
+  return <Login />;
 }
