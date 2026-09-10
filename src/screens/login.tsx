@@ -1,15 +1,49 @@
 import PatterHeader from '../components/PatternHeader';
+import { useAuth } from '../contexts/AuthContext';
 
-import SafeAreaView from 'react-native-safe-area-view';
-import { Image, StyleSheet, Text, TextInput, Pressable, View } from 'react-native';
+import { useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  ActivityIndicator,
+  Image,
+  StyleSheet,
+  Text,
+  TextInput,
+  Pressable,
+  View,
+} from 'react-native';
 
 export default function LoginScreen() {
+  const { signIn } = useAuth();
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(false);
+
+  async function handleLogin() {
+    if (carregando) return;
+    if (!email.trim() || !senha) {
+      setErro('Preencha e-mail e senha.');
+      return;
+    }
+
+    setErro(null);
+    setCarregando(true);
+    try {
+      // Ao entrar, o layout raiz troca para o Passeio sozinho.
+      await signIn(email, senha);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível entrar.');
+      setCarregando(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container}>
         <View style={styles.patternHeaderBleed}>
           <PatterHeader />
         </View>
-        
+
         <View style={ styles.titleContainer }>
           <Text style={styles.title}>Bem-vindo(a) de volta!</Text>
           <Text style={styles.subtitle}>Entre com suas credenciais para acessar sua conta.</Text>
@@ -25,6 +59,14 @@ export default function LoginScreen() {
               style={styles.input}
               placeholder="Digite seu e-mail"
               placeholderTextColor="#AAAAAA"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
+              returnKeyType="next"
             />
           </View>
         </View>
@@ -40,13 +82,39 @@ export default function LoginScreen() {
               placeholder="Digite sua senha"
               placeholderTextColor="#AAAAAA"
               secureTextEntry
+              value={senha}
+              onChangeText={setSenha}
+              autoCapitalize="none"
+              autoComplete="current-password"
+              textContentType="password"
+              returnKeyType="go"
+              onSubmitEditing={handleLogin}
             />
           </View>
         </View>
 
+        {erro ? (
+          <Text style={styles.errorText} accessibilityLiveRegion="polite">
+            {erro}
+          </Text>
+        ) : null}
+
         <View style={styles.loginButtonFrame}>
-          <Pressable style={styles.loginButton}>
-            <Text style={styles.loginButtonText}>Login</Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.loginButton,
+              (pressed || carregando) && styles.loginButtonPressed,
+            ]}
+            onPress={handleLogin}
+            disabled={carregando}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: carregando, busy: carregando }}
+          >
+            {carregando ? (
+              <ActivityIndicator color="#FAFBF8" />
+            ) : (
+              <Text style={styles.loginButtonText}>Login</Text>
+            )}
           </Pressable>
         </View>
 
@@ -54,7 +122,7 @@ export default function LoginScreen() {
           <Text style={styles.signupText}>
             Não tem uma conta?{' '}
               <Text style={styles.signupLink} onPress={() => {}}>Crie agora</Text>
- 
+
           </Text>
         </View>
 
@@ -109,7 +177,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 10,
     letterSpacing: 0,
-    color: '#D9D9D9',
+    color: '#1A1A1A', // era #D9D9D9, que deixava o texto digitado quase invisível
   },
   inputContainer: {
     width: '100%',
@@ -137,6 +205,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     color: '#1A1A1A',
   },
+  errorText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#B3261E',
+    textAlign: 'center',
+  },
   loginButtonFrame: {
     width: '100%', // era 361 fixo
     paddingHorizontal: 27, // substitui o left: 27 do botão
@@ -148,6 +222,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#832D51',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loginButtonPressed: {
+    opacity: 0.8,
   },
   loginButtonText: {
     fontWeight: '500',
