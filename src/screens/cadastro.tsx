@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { useRouter } from 'expo-router';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -12,6 +14,8 @@ import {
 } from 'react-native';
 import type { StyleProp, TextStyle } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
+
+import { useAuth } from '../contexts/AuthContext';
 
 const fonts = {
   regular: 'Inter_400Regular',
@@ -211,10 +215,41 @@ function Logo() {
 }
 
 export default function Cadastro() {
+  const { signUp } = useAuth();
+  const router = useRouter();
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [aceitouTermos, setAceitouTermos] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(false);
+
+  async function handleCadastro() {
+    if (carregando) return;
+
+    if (!nome.trim() || !email.trim() || !senha) {
+      setErro('Preencha nome, e-mail e senha.');
+      return;
+    }
+    if (senha.length < 6) {
+      setErro('A senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+    if (!aceitouTermos) {
+      setErro('Você precisa aceitar os termos de uso.');
+      return;
+    }
+
+    setErro(null);
+    setCarregando(true);
+    try {
+      // O layout raiz abre o app quando Auth e Firestore estiverem concluídos.
+      await signUp(nome, email, senha);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível criar sua conta.');
+      setCarregando(false);
+    }
+  }
 
   return (
     <KeyboardAvoidingView
@@ -238,6 +273,7 @@ export default function Cadastro() {
             placeholder="Digite seu nome"
             value={nome}
             onChangeText={setNome}
+            editable={!carregando}
             autoCapitalize="words"
             autoComplete="name"
           />
@@ -247,6 +283,7 @@ export default function Cadastro() {
             placeholder="Digite seu e-mail"
             value={email}
             onChangeText={setEmail}
+            editable={!carregando}
             keyboardType="email-address"
             autoCapitalize="none"
             autoComplete="email"
@@ -257,16 +294,22 @@ export default function Cadastro() {
             placeholder="Digite uma senha"
             value={senha}
             onChangeText={setSenha}
+            editable={!carregando}
             inputStyle={styles.inputPoppins}
             secureTextEntry
             autoCapitalize="none"
+            autoComplete="new-password"
+            textContentType="newPassword"
+            returnKeyType="done"
+            onSubmitEditing={handleCadastro}
           />
 
           <Pressable
             style={styles.termsRow}
             onPress={() => setAceitouTermos((valor) => !valor)}
+            disabled={carregando}
             accessibilityRole="checkbox"
-            accessibilityState={{ checked: aceitouTermos }}
+            accessibilityState={{ checked: aceitouTermos, disabled: carregando }}
           >
             <View style={[styles.checkbox, aceitouTermos && styles.checkboxChecked]}>
               {aceitouTermos ? <Text style={styles.checkboxMark}>✓</Text> : null}
@@ -274,12 +317,28 @@ export default function Cadastro() {
             <Text style={styles.termsText}>Li e concordo com os termos de uso</Text>
           </Pressable>
 
+          {erro ? (
+            <Text style={styles.errorText} accessibilityLiveRegion="polite">
+              {erro}
+            </Text>
+          ) : null}
+
           <View style={styles.primaryButtonBox}>
             <Pressable
-              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                (pressed || carregando) && styles.pressed,
+              ]}
+              onPress={handleCadastro}
+              disabled={carregando}
               accessibilityRole="button"
+              accessibilityState={{ disabled: carregando, busy: carregando }}
             >
-              <Text style={styles.primaryButtonText}>Inscreva-se</Text>
+              {carregando ? (
+                <ActivityIndicator color={colors.white} />
+              ) : (
+                <Text style={styles.primaryButtonText}>Inscreva-se</Text>
+              )}
             </Pressable>
           </View>
 
@@ -297,7 +356,11 @@ export default function Cadastro() {
 
           <View style={styles.loginRow}>
             <Text style={styles.loginText}>Já possui uma conta? </Text>
-            <Pressable accessibilityRole="link">
+            <Pressable
+              accessibilityRole="link"
+              onPress={() => router.navigate('/login')}
+              disabled={carregando}
+            >
               <Text style={styles.loginLink}>Entre</Text>
             </Pressable>
           </View>
@@ -411,6 +474,14 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     fontFamily: fonts.medium,
     color: colors.black,
+  },
+  errorText: {
+    alignSelf: 'stretch',
+    color: '#B3261E',
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
   },
 
   /* Botão principal */

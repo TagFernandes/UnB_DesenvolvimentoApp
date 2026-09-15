@@ -24,7 +24,7 @@ export default function RootLayout() {
 }
 
 function RootNavigator() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isSigningUp } = useAuth();
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -48,13 +48,14 @@ function RootNavigator() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       {/* Logado: telas do app */}
-      <Stack.Protected guard={!!user}>
+      <Stack.Protected guard={!!user && !isSigningUp}>
         <Stack.Screen name="index" />
       </Stack.Protected>
 
-      {/* Deslogado: só o login */}
-      <Stack.Protected guard={!user}>
+      {/* Login e cadastro ficam disponíveis enquanto não há uma sessão pronta. */}
+      <Stack.Protected guard={!user || isSigningUp}>
         <Stack.Screen name="login" />
+        <Stack.Screen name="cadastro" />
       </Stack.Protected>
     </Stack>
   );

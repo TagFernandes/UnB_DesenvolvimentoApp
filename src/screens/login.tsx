@@ -1,6 +1,7 @@
 import PatterHeader from '../components/PatternHeader';
 import { useAuth } from '../contexts/AuthContext';
 
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -15,6 +16,7 @@ import {
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<string | null>(null);
@@ -121,7 +123,9 @@ export default function LoginScreen() {
         <View style={styles.signupContainer}>
           <Text style={styles.signupText}>
             Não tem uma conta?{' '}
-              <Text style={styles.signupLink} onPress={() => {}}>Crie agora</Text>
+              <Text style={styles.signupLink} onPress={() => router.navigate('/cadastro')}>
+                Crie agora
+              </Text>
 
           </Text>
         </View>

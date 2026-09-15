@@ -6,15 +6,21 @@ import {
   initializeAuth,
   type Auth,
 } from 'firebase/auth';
+import { getFirestore, type Firestore } from 'firebase/firestore';
 
 import { firebaseConfig, firebaseConfigurado } from './firebaseConfig';
 
 // Android/iOS: guarda a sessão no AsyncStorage para o usuário continuar
 // logado depois de fechar o app. A versão web fica em firebase.web.ts.
-function criarAuth(): Auth | null {
-  if (!firebaseConfigurado) return null;
+const app = firebaseConfigurado
+  ? getApps().length
+    ? getApp()
+    : initializeApp(firebaseConfig)
+  : null;
 
-  const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+function criarAuth(): Auth | null {
+  if (!app) return null;
+
   try {
     return initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage),
@@ -26,3 +32,4 @@ function criarAuth(): Auth | null {
 }
 
 export const auth = criarAuth();
+export const db: Firestore | null = app ? getFirestore(app) : null;
