@@ -9,6 +9,7 @@
     "expo": "~57.0.19",
     "expo-constants": "~57.0.17",
     "expo-font": "~57.0.3",
+    "expo-image-picker": "~57.0.18",
     "expo-linking": "~57.0.9",
     "expo-router": "~57.0.20",
     "expo-splash-screen": "~57.0.8",
