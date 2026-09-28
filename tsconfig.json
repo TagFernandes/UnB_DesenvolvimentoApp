@@ -1,6 +1,11 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    "paths": {
+      // O @firebase/auth lista "types" antes de "react-native" nos exports, então o TS
+      // pegaria os tipos da web (sem getReactNativePersistence). No Metro isso não acontece.
+      "@firebase/auth": ["./node_modules/@firebase/auth/dist/index.rn.d.ts"]
+    }
   }
 }
