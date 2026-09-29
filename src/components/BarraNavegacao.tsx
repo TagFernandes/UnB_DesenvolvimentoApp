@@ -9,7 +9,7 @@ const colors = {
   white: '#FFFFFF',
 };
 
-type Aba = 'inicio' | 'buscar' | 'mensagens' | 'nova-conversa' | 'perfil';
+type Aba = 'inicio' | 'buscar' | 'mensagens' | 'perfil';
 
 function StrokeIcon({
   width,
@@ -61,21 +61,13 @@ function BuscarIcon({ color }: { color: string }) {
   );
 }
 
-function MensagensIcon({ color }: { color: string }) {
-  // Adaptado do Lucide "message-circle", ISC.
+function MensagensIcon({ color, fundo }: { color: string; fundo: string }) {
+  // Dois balões: o menor fica na frente e é preenchido com a cor do fundo
+  // para esconder o contorno do maior.
   return (
     <StrokeIcon width={26.8} height={26.66} viewBox="0 0 24 24" color={color} strokeWidth={1.8}>
-      <Path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
-    </StrokeIcon>
-  );
-}
-
-function NovaConversaIcon({ color }: { color: string }) {
-  return (
-    <StrokeIcon width={26.8} height={26.66} viewBox="0 0 24 24" color={color} strokeWidth={1.8}>
-      <Path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
-      <Line x1={12} y1={7} x2={12} y2={15} />
-      <Line x1={8} y1={11} x2={16} y2={11} />
+      <Path d="M20.93 14A8 8 0 1 0 18 16.93L21.5 18.5Z" />
+      <Path d="M5 19.83A5 5 0 1 0 3.17 18L2 21.5Z" fill={fundo} />
     </StrokeIcon>
   );
 }
@@ -94,15 +86,12 @@ function PerfilIcon({ color }: { color: string }) {
 const abas: {
   aba: Aba;
   label: string;
-  Icon: (props: { color: string }) => ReactNode;
+  Icon: (props: { color: string; fundo: string }) => ReactNode;
   rota?: Href;
-  /** Abre por cima da tela atual (com voltar) em vez de trocar de aba. */
-  empilhar?: boolean;
 }[] = [
   { aba: 'inicio', label: 'Início', Icon: HomeIcon, rota: '/' },
   { aba: 'buscar', label: 'Buscar', Icon: BuscarIcon },
   { aba: 'mensagens', label: 'Mensagens', Icon: MensagensIcon, rota: '/forum' },
-  { aba: 'nova-conversa', label: 'Nova conversa', Icon: NovaConversaIcon, rota: '/nova-conversa', empilhar: true },
   { aba: 'perfil', label: 'Perfil', Icon: PerfilIcon, rota: '/perfil' },
 ];
 
@@ -112,22 +101,21 @@ export default function BarraNavegacao({ ativa }: { ativa: Aba }) {
 
   return (
     <View style={styles.navBar}>
-      {abas.map(({ aba, label, Icon, rota, empilhar }) => {
+      {abas.map(({ aba, label, Icon, rota }) => {
         const selecionada = aba === ativa;
         return (
           <Pressable
             key={aba}
             style={[styles.navItem, selecionada && styles.navItemActive]}
-            onPress={
-              rota && !selecionada
-                ? () => (empilhar ? router.push(rota) : router.replace(rota))
-                : undefined
-            }
+            onPress={rota && !selecionada ? () => router.replace(rota) : undefined}
             accessibilityRole="button"
             accessibilityLabel={label}
             accessibilityState={{ selected: selecionada }}
           >
-            <Icon color={selecionada ? colors.white : colors.navIcon} />
+            <Icon
+              color={selecionada ? colors.white : colors.navIcon}
+              fundo={selecionada ? colors.navPink : colors.white}
+            />
           </Pressable>
         );
       })}
@@ -136,16 +124,19 @@ export default function BarraNavegacao({ ativa }: { ativa: Aba }) {
 }
 
 const styles = StyleSheet.create({
-  /* Barra flutuante: 329x50, bottom 31 */
+  /* Barra flutuante do Figma: 326.26x50, padding 8 33, bottom 26. Com a aba
+     de Mensagens ativa, o space-between dá o gap de ~50 do Figma e mantém os
+     ícones das pontas no lugar quando a aba ativa muda. */
   navBar: {
     position: 'absolute',
-    bottom: 31,
+    bottom: 26,
     alignSelf: 'center',
-    width: 329.06,
+    width: 326.26,
     height: 50,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingVertical: 8,
     paddingHorizontal: 33,
     borderRadius: 9999,
     backgroundColor: colors.white,
