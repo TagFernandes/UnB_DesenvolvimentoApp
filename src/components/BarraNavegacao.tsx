@@ -9,7 +9,7 @@ const colors = {
   white: '#FFFFFF',
 };
 
-type Aba = 'inicio' | 'buscar' | 'mensagens' | 'perfil';
+type Aba = 'inicio' | 'buscar' | 'mensagens' | 'nova-conversa' | 'perfil';
 
 function StrokeIcon({
   width,
@@ -70,6 +70,16 @@ function MensagensIcon({ color }: { color: string }) {
   );
 }
 
+function NovaConversaIcon({ color }: { color: string }) {
+  return (
+    <StrokeIcon width={26.8} height={26.66} viewBox="0 0 24 24" color={color} strokeWidth={1.8}>
+      <Path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+      <Line x1={12} y1={7} x2={12} y2={15} />
+      <Line x1={8} y1={11} x2={16} y2={11} />
+    </StrokeIcon>
+  );
+}
+
 function PerfilIcon({ color }: { color: string }) {
   // Adaptado do Lucide "circle-user", ISC.
   return (
@@ -86,10 +96,13 @@ const abas: {
   label: string;
   Icon: (props: { color: string }) => ReactNode;
   rota?: Href;
+  /** Abre por cima da tela atual (com voltar) em vez de trocar de aba. */
+  empilhar?: boolean;
 }[] = [
   { aba: 'inicio', label: 'Início', Icon: HomeIcon, rota: '/' },
   { aba: 'buscar', label: 'Buscar', Icon: BuscarIcon },
-  { aba: 'mensagens', label: 'Mensagens', Icon: MensagensIcon },
+  { aba: 'mensagens', label: 'Mensagens', Icon: MensagensIcon, rota: '/forum' },
+  { aba: 'nova-conversa', label: 'Nova conversa', Icon: NovaConversaIcon, rota: '/nova-conversa', empilhar: true },
   { aba: 'perfil', label: 'Perfil', Icon: PerfilIcon, rota: '/perfil' },
 ];
 
@@ -99,13 +112,17 @@ export default function BarraNavegacao({ ativa }: { ativa: Aba }) {
 
   return (
     <View style={styles.navBar}>
-      {abas.map(({ aba, label, Icon, rota }) => {
+      {abas.map(({ aba, label, Icon, rota, empilhar }) => {
         const selecionada = aba === ativa;
         return (
           <Pressable
             key={aba}
             style={[styles.navItem, selecionada && styles.navItemActive]}
-            onPress={rota && !selecionada ? () => router.replace(rota) : undefined}
+            onPress={
+              rota && !selecionada
+                ? () => (empilhar ? router.push(rota) : router.replace(rota))
+                : undefined
+            }
             accessibilityRole="button"
             accessibilityLabel={label}
             accessibilityState={{ selected: selecionada }}

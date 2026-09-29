@@ -50,7 +50,10 @@ function RootNavigator() {
       {/* Logado: telas do app */}
       <Stack.Protected guard={!!user && !isSigningUp}>
         <Stack.Screen name="index" options={{ animation: 'none' }} />
+        <Stack.Screen name="forum" options={{ animation: 'none' }} />
         <Stack.Screen name="perfil" options={{ animation: 'none' }} />
+        <Stack.Screen name="conversas" />
+        <Stack.Screen name="nova-conversa" />
       </Stack.Protected>
 
       {/* Login e cadastro ficam disponíveis enquanto não há uma sessão pronta. */}
