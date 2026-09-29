@@ -31,6 +31,8 @@ const colors = {
   searchBg: '#EBEBEB',
   searchText: '#8A8A8E',
   accent: '#E0457B',
+  accentDark: '#A32B63',
+  onAccent: '#FFFFFF',
   badgeBg: '#FBD3E4',
   badgeText: '#B4185F',
   online: '#5C7F1E',
@@ -65,6 +67,10 @@ const radius = {
   pill: 999,
   badge: 6,
 } as const;
+
+/** A barra de navegação fica a 26 do rodapé e tem 50 de altura. */
+const FAB_SIZE = 52;
+const FAB_BOTTOM = 26 + 50 + spacing.lg;
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -273,6 +279,16 @@ export default function ForumScreen(): React.JSX.Element {
         showsVerticalScrollIndicator={false}
       />
 
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Nova conversa"
+        activeOpacity={0.8}
+        style={styles.fab}
+        onPress={() => router.push('/nova-conversa')}
+      >
+        <Ionicons name="pencil" size={22} color={colors.onAccent} />
+      </TouchableOpacity>
+
       <BarraNavegacao ativa="mensagens" />
     </SafeAreaView>
   );
@@ -299,7 +315,8 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: spacing.screen,
     paddingTop: spacing.lg,
-    paddingBottom: 110,
+    // Espaço para o botão de nova conversa e a barra de navegação.
+    paddingBottom: FAB_BOTTOM + FAB_SIZE + spacing.lg,
   },
 
   /* Header */
@@ -460,5 +477,23 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.accent,
     backgroundColor: colors.badgeBg,
+  },
+
+  /* Botão de nova conversa, logo acima da barra de navegação */
+  fab: {
+    position: 'absolute',
+    right: spacing.screen,
+    bottom: FAB_BOTTOM,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
+    backgroundColor: colors.accentDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
 });
