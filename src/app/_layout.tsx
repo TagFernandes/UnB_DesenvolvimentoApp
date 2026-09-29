@@ -50,6 +50,8 @@ function RootNavigator() {
       {/* Logado: telas do app */}
       <Stack.Protected guard={!!user && !isSigningUp}>
         <Stack.Screen name="index" />
+        <Stack.Screen name="forum" />
+        <Stack.Screen name="home" />
       </Stack.Protected>
 
       {/* Login e cadastro ficam disponíveis enquanto não há uma sessão pronta. */}

@@ -13,6 +13,7 @@ import Svg, {
 } from 'react-native-svg';
 
 import { useAuth } from '../contexts/AuthContext';
+import { useRouter } from 'expo-router';
 
 const fonts = {
   regular: 'Inter_400Regular',
@@ -308,6 +309,7 @@ function CardGuia() {
 
 function BarraNavegacao() {
   const { signOut } = useAuth();
+  const router = useRouter();
 
   return (
     <View style={styles.navBar}>
@@ -322,8 +324,12 @@ function BarraNavegacao() {
       <Pressable style={styles.navItem} accessibilityRole="button" accessibilityLabel="Buscar">
         <BuscarIcon />
       </Pressable>
-      <Pressable style={styles.navItem} accessibilityRole="button" accessibilityLabel="Mensagens">
-        <MensagensIcon />
+      <Pressable 
+        style={styles.navItem} 
+        accessibilityRole="button" 
+        accessibilityLabel="Mensagens"
+        onPress={()=> router.navigate('/forum')}>
+        <MensagensIcon/>
       </Pressable>
       {/* Provisório: enquanto não existe tela de perfil, o ícone faz logout. */}
       <Pressable
