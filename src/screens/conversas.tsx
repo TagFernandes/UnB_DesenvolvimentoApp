@@ -6,7 +6,6 @@ import {
   TextInput,
   FlatList,
   ScrollView,
-  Image,
   Pressable,
   StyleSheet,
   useWindowDimensions,
@@ -15,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where, type Timestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 /* ------------------------------------------------------------------ */
@@ -86,20 +85,20 @@ const layout = {
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
 type Category = 'Segurança' | 'Mobilidade' | 'Custo de vida' | 'Lazer' | 'Geral';
+type CategoryCode = 'safety' | 'mobility' | 'cost_of_living' | 'leisure' | 'general';
 type Filter = 'Todas' | Category;
 
 type Post = {
   id: string;
   title: string;
   body: string;
-  category: Category;
+  category: CategoryCode;
   author: string;
   initials: string;
   time: string;
   comments: number;
   likes: number;
   liked: boolean;
-  avatarUrl?: string;
 };
 
 type BadgeColors = { background: string; text: string };
@@ -120,49 +119,33 @@ const FILTERS: readonly Filter[] = [
   'Lazer',
 ];
 const CATEGORIES: readonly Category[] = FILTERS.slice(1) as Category[];
-
-const CATEGORY_COLORS: Record<Category, BadgeColors> = {
-  Segurança: { background: '#E5EBCB', text: '#5C7F1E' },
-  Mobilidade: { background: '#E6E3EF', text: '#5A5780' },
-  'Custo de vida': { background: '#F6EBC2', text: '#8A6A00' },
-  Lazer: { background: '#DDEBC8', text: '#4E7A1E' },
-  Geral: { background: '#E8E8E8', text: '#666666' },
+const CATEGORY_LABELS: Record<CategoryCode, Category> = {
+  safety: 'Segurança',
+  mobility: 'Mobilidade',
+  cost_of_living: 'Custo de vida',
+  leisure: 'Lazer',
+  general: 'Geral',
+};
+const CATEGORY_COLORS: Record<CategoryCode, BadgeColors> = {
+  safety: { background: '#E5EBCB', text: '#5C7F1E' },
+  mobility: { background: '#E6E3EF', text: '#5A5780' },
+  cost_of_living: { background: '#F6EBC2', text: '#8A6A00' },
+  leisure: { background: '#DDEBC8', text: '#4E7A1E' },
+  general: { background: '#E8E8E8', text: '#666666' },
 };
 
-type ConversationData = Record<string, unknown>;
-
-function readString(data: ConversationData, keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = data[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return undefined;
-}
-
-function readNumber(data: ConversationData, keys: string[]): number {
-  for (const key of keys) {
-    const value = data[key];
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) {
-      return Number(value);
-    }
-    if (Array.isArray(value)) return value.length;
-  }
-  return 0;
-}
+type ConversationData = {
+  author_name?: string;
+  body?: string;
+  category?: CategoryCode;
+  created_at?: Timestamp;
+  like_count?: number;
+  reply_count?: number;
+  title?: string;
+};
 
 function readDate(data: ConversationData): Date | undefined {
-  const value = data.createdAt ?? data.created_at ?? data.criadoEm ?? data.data_criacao ?? data.data;
-  if (value instanceof Date) return value;
-  if (typeof value === 'string' || typeof value === 'number') {
-    const date = new Date(value);
-    if (!Number.isNaN(date.getTime())) return date;
-  }
-  if (value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') {
-    const date = value.toDate();
-    if (date instanceof Date && !Number.isNaN(date.getTime())) return date;
-  }
-  return undefined;
+  return data.created_at?.toDate();
 }
 
 function formatTime(date?: Date): string {
@@ -177,45 +160,33 @@ function formatTime(date?: Date): string {
 }
 
 function mapConversation(id: string, data: ConversationData): Post {
-  const author = readString(data, ['author', 'autor', 'nome_autor', 'nomeUsuario', 'usuarioNome']) ?? 'Morador';
+  const author = data.author_name?.trim() || 'Autor desconhecido';
   const initials = author
     .split(/\s+/)
     .slice(0, 2)
     .map((part) => part[0])
     .join('')
     .toLocaleUpperCase('pt-BR');
-  const categoryValue = readString(data, ['category', 'categoria', 'tema']);
-  const category = CATEGORIES.find((item) => item.toLocaleLowerCase('pt-BR') === categoryValue?.toLocaleLowerCase('pt-BR')) ?? 'Geral';
+  const category = data.category && data.category in CATEGORY_LABELS ? data.category : 'general';
 
   return {
     id,
-    title: readString(data, ['title', 'titulo', 'assunto', 'titulo_conversa']) ?? 'Conversa sem título',
-    body: readString(data, ['body', 'conteudo', 'descricao', 'texto', 'mensagem']) ?? '',
+    title: data.title?.trim() || 'Conversa sem título',
+    body: data.body ?? '',
     category,
     author,
     initials: initials || 'M',
-    time: readString(data, ['time', 'tempo']) ?? formatTime(readDate(data)),
-    comments: readNumber(data, [
-      'comments',
-      'comentarios',
-      'contador_comentarios',
-      'respostas',
-      'respostas_ultimo_post',
-      'respotas_ultimo_post',
-    ]),
-    likes: readNumber(data, ['likes', 'curtidas', 'contador_curtidas', 'likes_ultimo_post']),
+    time: formatTime(readDate(data)),
+    comments: data.reply_count ?? 0,
+    likes: data.like_count ?? 0,
     liked: false,
-    avatarUrl: readString(data, ['avatarUrl', 'avatar_url', 'foto', 'foto_perfil']),
   };
 }
 
 /* ------------------------------------------------------------------ */
 /* Components                                                          */
 /* ------------------------------------------------------------------ */
-function Avatar({ initials, label, uri }: AvatarProps): React.JSX.Element {
-  if (uri) {
-    return <Image source={{ uri }} style={styles.avatarSmall} accessibilityLabel={label} />;
-  }
+function Avatar({ initials, label }: AvatarProps): React.JSX.Element {
   return (
     <View style={styles.avatarSmall} accessibilityLabel={label}>
       <Text style={styles.avatarInitials}>{initials}</Text>
@@ -245,13 +216,13 @@ function PostCard({ post }: PostCardProps): React.JSX.Element {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${post.title}, categoria ${post.category}`}
+      accessibilityLabel={`${post.title}, categoria ${CATEGORY_LABELS[post.category]}`}
       style={styles.card}
     >
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>{post.title}</Text>
         <View style={[styles.badge, { backgroundColor: badge.background }]}>
-          <Text style={[styles.badgeText, { color: badge.text }]}>{post.category}</Text>
+          <Text style={[styles.badgeText, { color: badge.text }]}>{CATEGORY_LABELS[post.category]}</Text>
         </View>
       </View>
 
@@ -261,7 +232,7 @@ function PostCard({ post }: PostCardProps): React.JSX.Element {
 
       <View style={styles.cardFooter}>
         <View style={styles.authorRow}>
-          <Avatar initials={post.initials} label={`Foto de ${post.author}`} uri={post.avatarUrl} />
+          <Avatar initials={post.initials} label={`Foto de ${post.author}`} />
           <Text style={styles.authorText}>
             {post.author} • {post.time}
           </Text>
@@ -310,7 +281,11 @@ export default function ConversasScreen(): React.JSX.Element {
         if (!db) throw new Error('Firebase não está configurado.');
         if (!regionId) throw new Error('Não foi informada uma região.');
 
-        const snapshot = await getDocs(collection(db, 'regioes', regionId, 'conversas'));
+        const conversationsQuery = query(
+          collection(db, 'conversations'),
+          where('region_id', '==', regionId),
+        );
+        const snapshot = await getDocs(conversationsQuery);
         const items = snapshot.docs
           .map((document) => {
             const data = document.data();
@@ -336,7 +311,7 @@ export default function ConversasScreen(): React.JSX.Element {
   }, [regionId]);
 
   const visiblePosts = posts.filter((post) => {
-    const matchesFilter = activeFilter === 'Todas' || post.category === activeFilter;
+    const matchesFilter = activeFilter === 'Todas' || CATEGORY_LABELS[post.category] === activeFilter;
     const text = `${post.title} ${post.body} ${post.author}`.toLocaleLowerCase('pt-BR');
     return matchesFilter && text.includes(search.toLocaleLowerCase('pt-BR'));
   });
@@ -438,13 +413,19 @@ export default function ConversasScreen(): React.JSX.Element {
           showsVerticalScrollIndicator={false}
         />
 
-        <Pressable
+        {/* <Pressable
           accessibilityRole="button"
           accessibilityLabel="Nova conversa"
           style={[styles.fab, { right: gutter }]}
+          onPress={() =>
+            router.push({
+              pathname: '/nova-conversa',
+              params: { regionId, regionName },
+            })
+          }
         >
           <Ionicons name="pencil" size={22} color={colors.onAccent} />
-        </Pressable>
+        </Pressable> */}
       </View>
     </SafeAreaView>
   );

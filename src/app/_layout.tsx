@@ -51,6 +51,8 @@ function RootNavigator() {
       <Stack.Protected guard={!!user && !isSigningUp}>
         <Stack.Screen name="index" />
         <Stack.Screen name="forum" />
+        <Stack.Screen name="conversas" />
+        <Stack.Screen name="nova-conversa" />
         <Stack.Screen name="home" />
       </Stack.Protected>
 

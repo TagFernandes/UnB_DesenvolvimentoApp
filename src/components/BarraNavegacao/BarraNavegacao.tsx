@@ -68,6 +68,16 @@ function MensagensIcon() {
   );
 }
 
+function NovaConversaIcon() {
+  return (
+    <StrokeIcon width={26.8} height={26.66} viewBox="0 0 24 24" color={colors.navIcon} strokeWidth={1.8}>
+      <Path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+      <Line x1={12} y1={7} x2={12} y2={15} />
+      <Line x1={8} y1={11} x2={16} y2={11} />
+    </StrokeIcon>
+  );
+}
+
 function PerfilIcon() {
   return (
     <StrokeIcon width={26.8} height={26.67} viewBox="0 0 24 24" color={colors.navIcon} strokeWidth={1.8}>
@@ -105,6 +115,15 @@ export default function BarraNavegacao() {
         onPress={() => router.navigate('/forum')}
       >
         <MensagensIcon />
+      </Pressable>
+
+      <Pressable
+        style={styles.navItem}
+        accessibilityRole="button"
+        accessibilityLabel="Nova conversa"
+        onPress={() => router.push('/nova-conversa')}
+      >
+        <NovaConversaIcon />
       </Pressable>
 
       <Pressable

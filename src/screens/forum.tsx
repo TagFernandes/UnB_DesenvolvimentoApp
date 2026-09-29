@@ -1,7 +1,7 @@
 import BarraNavegacao from '../components/BarraNavegacao/BarraNavegacao';
 
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   ActivityIndicator,
   View,
@@ -80,13 +80,13 @@ type ForumItem = {
   likes: number;
 };
 
-type Regiao = {
-  nome?: string;
-  contador_conversas?: number;
-  titulo_ultimo_post?: string;
-  respotas_ultimo_post?: number | string;
-  likes_ultimo_post?: number;
-  ultima_ativadade?: Timestamp;
+type RegionData = {
+  name?: string;
+  conversation_count?: number;
+  last_activity_at?: Timestamp;
+  last_conversation_like_count?: number;
+  last_conversation_reply_count?: number;
+  last_conversation_title?: string;
 };
 
 type ForumCardProps = {
@@ -157,17 +157,19 @@ export default function ForumScreen(): React.JSX.Element {
   const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     let ativo = true;
 
     async function carregarRegioes(): Promise<void> {
+      setLoading(true);
+      setErro(null);
       try {
         if (!db) throw new Error('Firebase não está configurado.');
 
-        const snapshot = await getDocs(collection(db, 'regioes'));
+        const snapshot = await getDocs(collection(db, 'regions'));
         const items = snapshot.docs.map((documento) => {
-          const regiao = documento.data() as Regiao;
-          const ultimaAtividade = regiao.ultima_ativadade?.toDate();
+          const region = documento.data() as RegionData;
+          const ultimaAtividade = region.last_activity_at?.toDate();
           const minutosDesdeAtividade = ultimaAtividade
             ? Math.max(0, Math.floor((Date.now() - ultimaAtividade.getTime()) / 60000))
             : null;
@@ -187,13 +189,13 @@ export default function ForumScreen(): React.JSX.Element {
 
           return {
             id: documento.id,
-            region: regiao.nome ?? documento.id,
-            conversations: Number(regiao.contador_conversas ?? 0),
-            description: regiao.titulo_ultimo_post ?? 'Nenhuma conversa recente.',
+            region: region.name ?? documento.id,
+            conversations: region.conversation_count ?? 0,
+            description: region.last_conversation_title ?? 'Nenhuma conversa recente.',
             online: minutosDesdeAtividade !== null && minutosDesdeAtividade < 15,
             activity,
-            comments: Number(regiao.respotas_ultimo_post ?? 0),
-            likes: Number(regiao.likes_ultimo_post ?? 0),
+            comments: region.last_conversation_reply_count ?? 0,
+            likes: region.last_conversation_like_count ?? 0,
           };
         });
 
@@ -207,11 +209,11 @@ export default function ForumScreen(): React.JSX.Element {
       }
     }
 
-    carregarRegioes();
+    void carregarRegioes();
     return () => {
       ativo = false;
     };
-  }, []);
+  }, []));
 
   const renderItem: ListRenderItem<ForumItem> = ({ item }) => (
     <ForumCard
