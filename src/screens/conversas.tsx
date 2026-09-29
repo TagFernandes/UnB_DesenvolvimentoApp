@@ -513,7 +513,7 @@ export default function ConversasScreen(): React.JSX.Element {
           showsVerticalScrollIndicator={false}
         />
 
-        {/* <Pressable
+        <Pressable
           accessibilityRole="button"
           accessibilityLabel="Nova conversa"
           style={[styles.fab, { right: gutter }]}
@@ -525,7 +525,7 @@ export default function ConversasScreen(): React.JSX.Element {
           }
         >
           <Ionicons name="pencil" size={22} color={colors.onAccent} />
-        </Pressable> */}
+        </Pressable>
       </View>
     </SafeAreaView>
   );
