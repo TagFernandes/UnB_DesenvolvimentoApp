@@ -103,6 +103,7 @@ export default function NovaConversaScreen(): React.JSX.Element {
           name: selectedRegion.name,
           conversation_count: increment(1),
           last_activity_at: serverTimestamp(),
+          last_conversation_id: conversationRef.id,
           last_conversation_title: cleanTitle,
           last_conversation_like_count: 0,
           last_conversation_reply_count: 0,

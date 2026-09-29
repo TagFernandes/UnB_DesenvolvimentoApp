@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   View,
   Text,
   TextInput,
@@ -14,8 +15,18 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, getDocs, query, where, type Timestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  runTransaction,
+  serverTimestamp,
+  Timestamp,
+  query,
+  where,
+} from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 
 /* ------------------------------------------------------------------ */
 /* Design tokens                                                       */
@@ -105,7 +116,11 @@ type BadgeColors = { background: string; text: string };
 
 type ChipProps = { label: Filter; active: boolean; onPress: () => void };
 type AvatarProps = { initials: string; label: string; uri?: string };
-type PostCardProps = { post: Post };
+type PostCardProps = {
+  post: Post;
+  onToggleLike: () => void;
+  likeDisabled: boolean;
+};
 
 /* ------------------------------------------------------------------ */
 /* Data                                                                */
@@ -141,7 +156,13 @@ type ConversationData = {
   created_at?: Timestamp;
   like_count?: number;
   reply_count?: number;
+  region_id?: string;
   title?: string;
+};
+
+type RegionData = {
+  last_activity_at?: Timestamp;
+  last_conversation_id?: string;
 };
 
 function readDate(data: ConversationData): Date | undefined {
@@ -159,7 +180,7 @@ function formatTime(date?: Date): string {
   return days < 7 ? `${days}d` : date.toLocaleDateString('pt-BR');
 }
 
-function mapConversation(id: string, data: ConversationData): Post {
+function mapConversation(id: string, data: ConversationData, liked: boolean): Post {
   const author = data.author_name?.trim() || 'Autor desconhecido';
   const initials = author
     .split(/\s+/)
@@ -179,7 +200,7 @@ function mapConversation(id: string, data: ConversationData): Post {
     time: formatTime(readDate(data)),
     comments: data.reply_count ?? 0,
     likes: data.like_count ?? 0,
-    liked: false,
+    liked,
   };
 }
 
@@ -210,15 +231,11 @@ function Chip({ label, active, onPress }: ChipProps): React.JSX.Element {
   );
 }
 
-function PostCard({ post }: PostCardProps): React.JSX.Element {
+function PostCard({ post, onToggleLike, likeDisabled }: PostCardProps): React.JSX.Element {
   const badge = CATEGORY_COLORS[post.category];
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${post.title}, categoria ${CATEGORY_LABELS[post.category]}`}
-      style={styles.card}
-    >
+    <View style={styles.card}>
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>{post.title}</Text>
         <View style={[styles.badge, { backgroundColor: badge.background }]}>
@@ -243,17 +260,25 @@ function PostCard({ post }: PostCardProps): React.JSX.Element {
             <Ionicons name="chatbubble-outline" size={14} color={colors.textSecondary} />
             <Text style={styles.statText}>{post.comments}</Text>
           </View>
-          <View style={styles.stat} accessibilityLabel={`${post.likes} curtidas`}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={post.liked ? 'Remover curtida' : 'Curtir conversa'}
+            accessibilityState={{ selected: post.liked, disabled: likeDisabled }}
+            disabled={likeDisabled}
+            hitSlop={10}
+            style={styles.stat}
+            onPress={onToggleLike}
+          >
             <Ionicons
               name={post.liked ? 'heart' : 'heart-outline'}
               size={14}
               color={post.liked ? colors.accent : colors.textSecondary}
             />
             <Text style={[styles.statText, post.liked && styles.statTextLiked]}>{post.likes}</Text>
-          </View>
+          </Pressable>
         </View>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -270,6 +295,8 @@ export default function ConversasScreen(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<Filter>('Todas');
+  const [likingPostIds, setLikingPostIds] = useState<string[]>([]);
+  const inFlightLikes = useRef(new Set<string>());
 
   useEffect(() => {
     let active = true;
@@ -278,22 +305,26 @@ export default function ConversasScreen(): React.JSX.Element {
       setLoading(true);
       setError(null);
       try {
-        if (!db) throw new Error('Firebase não está configurado.');
+        const firestore = db;
+        if (!firestore) throw new Error('Firebase não está configurado.');
         if (!regionId) throw new Error('Não foi informada uma região.');
 
         const conversationsQuery = query(
-          collection(db, 'conversations'),
+          collection(firestore, 'conversations'),
           where('region_id', '==', regionId),
         );
         const snapshot = await getDocs(conversationsQuery);
-        const items = snapshot.docs
-          .map((document) => {
-            const data = document.data();
-            return {
-              post: mapConversation(document.id, data),
-              createdAt: readDate(data)?.getTime() ?? 0,
-            };
-          })
+        const userId = auth?.currentUser?.uid;
+        const items = (await Promise.all(snapshot.docs.map(async (document) => {
+          const data = document.data() as ConversationData;
+          const likeSnapshot = userId
+            ? await getDoc(doc(firestore, 'conversations', document.id, 'likes', userId))
+            : null;
+          return {
+            post: mapConversation(document.id, data, likeSnapshot?.exists() ?? false),
+            createdAt: readDate(data)?.getTime() ?? 0,
+          };
+        })))
           .sort((first, second) => second.createdAt - first.createdAt)
           .map(({ post }) => post);
         if (active) setPosts(items);
@@ -310,6 +341,71 @@ export default function ConversasScreen(): React.JSX.Element {
     };
   }, [regionId]);
 
+  async function toggleLike(post: Post): Promise<void> {
+    const userId = auth?.currentUser?.uid;
+    if (!db || !regionId) return;
+    if (!userId) {
+      Alert.alert('Entre na sua conta', 'É necessário entrar para curtir uma conversa.');
+      return;
+    }
+    if (inFlightLikes.current.has(post.id)) return;
+
+    inFlightLikes.current.add(post.id);
+    setLikingPostIds((current) => [...current, post.id]);
+    try {
+      const conversationRef = doc(db, 'conversations', post.id);
+      const likeRef = doc(db, 'conversations', post.id, 'likes', userId);
+      const regionRef = doc(db, 'regions', regionId);
+      const result = await runTransaction(db, async (transaction) => {
+        const [conversationSnapshot, likeSnapshot, regionSnapshot] = await Promise.all([
+          transaction.get(conversationRef),
+          transaction.get(likeRef),
+          transaction.get(regionRef),
+        ]);
+        if (!conversationSnapshot.exists()) throw new Error('Conversa não encontrada.');
+
+        const conversation = conversationSnapshot.data() as ConversationData;
+        if (conversation.region_id !== regionId) throw new Error('A conversa não pertence a esta região.');
+
+        const wasLiked = likeSnapshot.exists();
+        const likeCount = Math.max(0, (conversation.like_count ?? 0) + (wasLiked ? -1 : 1));
+        if (wasLiked) {
+          transaction.delete(likeRef);
+        } else {
+          transaction.set(likeRef, { user_uid: userId, created_at: serverTimestamp() });
+        }
+        transaction.update(conversationRef, { like_count: likeCount });
+
+        if (regionSnapshot.exists()) {
+          const region = regionSnapshot.data() as RegionData;
+          const isLatestConversation = region.last_conversation_id === post.id || (
+            !region.last_conversation_id &&
+            region.last_activity_at !== undefined &&
+            conversation.created_at !== undefined &&
+            region.last_activity_at.isEqual(conversation.created_at)
+          );
+          if (isLatestConversation) {
+            transaction.update(regionRef, { last_conversation_like_count: likeCount });
+          }
+        }
+
+        return { liked: !wasLiked, likes: likeCount };
+      });
+
+      setPosts((current) => current.map((item) =>
+        item.id === post.id ? { ...item, liked: result.liked, likes: result.likes } : item,
+      ));
+    } catch (likeError) {
+      Alert.alert(
+        'Não foi possível atualizar a curtida',
+        likeError instanceof Error ? likeError.message : 'Tente novamente.',
+      );
+    } finally {
+      inFlightLikes.current.delete(post.id);
+      setLikingPostIds((current) => current.filter((id) => id !== post.id));
+    }
+  }
+
   const visiblePosts = posts.filter((post) => {
     const matchesFilter = activeFilter === 'Todas' || CATEGORY_LABELS[post.category] === activeFilter;
     const text = `${post.title} ${post.body} ${post.author}`.toLocaleLowerCase('pt-BR');
@@ -318,7 +414,11 @@ export default function ConversasScreen(): React.JSX.Element {
 
   const renderItem: ListRenderItem<Post> = ({ item }) => (
     <View style={{ paddingHorizontal: gutter }}>
-      <PostCard post={item} />
+      <PostCard
+        post={item}
+        onToggleLike={() => void toggleLike(item)}
+        likeDisabled={likingPostIds.includes(item.id)}
+      />
     </View>
   );
 
