@@ -15,9 +15,7 @@ import {
 import type { StyleProp, TextStyle } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase'; 
+import { useAuth } from '../contexts/AuthContext';
 
 const fonts = {
   regular: 'Inter_400Regular',
@@ -209,6 +207,7 @@ function Logo() {
 
 export default function Cadastro() {
   const router = useRouter();
+  const { signUp } = useAuth();
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -236,43 +235,11 @@ export default function Cadastro() {
     setCarregando(true);
 
     try {
-      if (!auth || !db) {
-        throw new Error('Firebase não inicializado. Verifique o .env.local e reinicie o Expo.');
-      }
-
-      // Cria a conta
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email.trim().toLowerCase(),
-        senha
-      );
-
-      const user = userCredential.user;
-
-      // Salva no Firestore
-      await setDoc(doc(db, 'usuarios', user.uid), {
-        nome: nome.trim(),
-        email: user.email,
-        criadoEm: new Date().toISOString(),
-      });
-
-      // Sucesso! Joga para a tela inicial
-      router.replace('/'); 
-      
-    } catch (e: any) {
-      let mensagem = 'Não foi possível criar a sua conta.';
-      
-      if (e.code === 'auth/email-already-in-use') {
-        mensagem = 'Este e-mail já está cadastrado.';
-      } else if (e.code === 'auth/invalid-email') {
-        mensagem = 'Formato de e-mail inválido.';
-      } else if (e.code === 'auth/network-request-failed') {
-        mensagem = 'Sem conexão à internet.';
-      } else if (e.message) {
-        mensagem = e.message;
-      }
-
-      setErro(mensagem);
+      // Cria a conta e o perfil em users/{uid}. Ao terminar, o layout leva
+      // o usuário para a tela inicial.
+      await signUp(nome, email.trim().toLowerCase(), senha);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível criar a sua conta.');
     } finally {
       setCarregando(false);
     }

@@ -49,7 +49,8 @@ function RootNavigator() {
     <Stack screenOptions={{ headerShown: false }}>
       {/* Logado: telas do app */}
       <Stack.Protected guard={!!user && !isSigningUp}>
-        <Stack.Screen name="index" />
+        <Stack.Screen name="index" options={{ animation: 'none' }} />
+        <Stack.Screen name="perfil" options={{ animation: 'none' }} />
       </Stack.Protected>
 
       {/* Login e cadastro ficam disponíveis enquanto não há uma sessão pronta. */}
