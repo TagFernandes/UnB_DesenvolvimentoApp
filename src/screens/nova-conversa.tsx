@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, doc, getDoc, increment, runTransaction, serverTimestamp } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -47,7 +47,14 @@ const regions: Region[] = [
 
 export default function NovaConversaScreen(): React.JSX.Element {
   const router = useRouter();
-  const { regionId: initialRegionId } = useLocalSearchParams<{ regionId?: string }>();
+  const { regionId: initialRegionId, regionName: initialRegionName } =
+    useLocalSearchParams<{ regionId?: string; regionName?: string }>();
+  // Se o usuário veio de dentro de uma RA, ela é a única opção de região.
+  const regionOptions = useMemo<Region[]>(() => {
+    if (!initialRegionId) return regions;
+    const region = regions.find((item) => item.id === initialRegionId);
+    return [region ?? { id: initialRegionId, name: initialRegionName ?? initialRegionId }];
+  }, [initialRegionId, initialRegionName]);
   const [selectedRegion, setSelectedRegion] = useState<Region | null>(null);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -56,8 +63,8 @@ export default function NovaConversaScreen(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setSelectedRegion(regions.find((region) => region.id === initialRegionId) ?? null);
-  }, [initialRegionId]);
+    setSelectedRegion(regionOptions.find((region) => region.id === initialRegionId) ?? null);
+  }, [initialRegionId, regionOptions]);
 
   async function createConversation(): Promise<void> {
     const cleanTitle = title.trim();
@@ -149,7 +156,7 @@ export default function NovaConversaScreen(): React.JSX.Element {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Região</Text>
         <View style={styles.regionList}>
-          {regions.map((region) => {
+          {regionOptions.map((region) => {
             const selected = selectedRegion?.id === region.id;
             return (
               <Pressable

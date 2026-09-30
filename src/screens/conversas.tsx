@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   collection,
   doc,
@@ -118,6 +118,7 @@ type ChipProps = { label: Filter; active: boolean; onPress: () => void };
 type AvatarProps = { initials: string; label: string; uri?: string };
 type PostCardProps = {
   post: Post;
+  onOpen: () => void;
   onToggleLike: () => void;
   likeDisabled: boolean;
 };
@@ -231,11 +232,16 @@ function Chip({ label, active, onPress }: ChipProps): React.JSX.Element {
   );
 }
 
-function PostCard({ post, onToggleLike, likeDisabled }: PostCardProps): React.JSX.Element {
+function PostCard({ post, onOpen, onToggleLike, likeDisabled }: PostCardProps): React.JSX.Element {
   const badge = CATEGORY_COLORS[post.category];
 
   return (
-    <View style={styles.card}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Abrir conversa ${post.title}`}
+      style={styles.card}
+      onPress={onOpen}
+    >
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>{post.title}</Text>
         <View style={[styles.badge, { backgroundColor: badge.background }]}>
@@ -278,7 +284,7 @@ function PostCard({ post, onToggleLike, likeDisabled }: PostCardProps): React.JS
           </Pressable>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -298,7 +304,8 @@ export default function ConversasScreen(): React.JSX.Element {
   const [likingPostIds, setLikingPostIds] = useState<string[]>([]);
   const inFlightLikes = useRef(new Set<string>());
 
-  useEffect(() => {
+  // Recarrega ao voltar para a tela, para refletir comentários e curtidas feitos na conversa.
+  useFocusEffect(useCallback(() => {
     let active = true;
 
     async function loadConversations(): Promise<void> {
@@ -339,7 +346,7 @@ export default function ConversasScreen(): React.JSX.Element {
     return () => {
       active = false;
     };
-  }, [regionId]);
+  }, [regionId]));
 
   async function toggleLike(post: Post): Promise<void> {
     const userId = auth?.currentUser?.uid;
@@ -416,6 +423,12 @@ export default function ConversasScreen(): React.JSX.Element {
     <View style={{ paddingHorizontal: gutter }}>
       <PostCard
         post={item}
+        onOpen={() =>
+          router.push({
+            pathname: '/conversa',
+            params: { conversationId: item.id, regionId },
+          })
+        }
         onToggleLike={() => void toggleLike(item)}
         likeDisabled={likingPostIds.includes(item.id)}
       />
