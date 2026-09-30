@@ -27,7 +27,14 @@
       "expo-router",
       "expo-font",
       "expo-splash-screen",
-      "expo-router"
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O mapeei precisa acessar suas fotos para você escolher a foto de perfil.",
+          "cameraPermission": "O mapeei precisa acessar a câmera para você tirar a foto de perfil."
+        }
+      ]
     ]
   }
 }

@@ -15,9 +15,7 @@ import {
 import type { StyleProp, TextStyle } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase'; 
+import { useAuth } from '../contexts/AuthContext';
 
 const fonts = {
   regular: 'Inter_400Regular',
@@ -41,6 +39,7 @@ const colors = {
 
 /* ---------- Arte decorativa do topo ---------- */
 
+/** Largura do frame do Figma: a arte é escalada proporcionalmente à tela. */
 const DESIGN_WIDTH = 393;
 const ART_WIDTH = 418;
 const ART_HEIGHT = 153;
@@ -51,11 +50,14 @@ type Rect = {
   width: number;
   height: number;
   color: string;
+  /** [superior-esq, superior-dir, inferior-dir, inferior-esq] */
   radius: [number, number, number, number];
   mirrored?: boolean;
 };
 
+/** Transcrição direta dos retângulos do Figma (Group 9 + Group 10). */
 const artRects: Rect[] = [
+  // Group 9
   { left: 103.95, top: 76.5, width: 106.43, height: 38.25, color: colors.pink, radius: [0, 0, 74, 74] },
   { left: 0, top: 0, width: 103.95, height: 38.25, color: colors.pink, radius: [0, 74, 0, 0] },
   { left: 0, top: 76.5, width: 104.78, height: 38.25, color: colors.pink, radius: [0, 0, 74, 0] },
@@ -67,6 +69,7 @@ const artRects: Rect[] = [
   { left: 0.82, top: 114.75, width: 106.43, height: 38.25, color: colors.maroon, radius: [74, 0, 0, 0], mirrored: true },
   { left: 0, top: 38.25, width: 106.43, height: 38.25, color: colors.maroon, radius: [0, 74, 0, 74], mirrored: true },
 
+  // Group 10
   { left: 311.34, top: 76.5, width: 106.43, height: 38.25, color: colors.pink, radius: [0, 0, 74, 74] },
   { left: 207.38, top: 0, width: 103.95, height: 38.25, color: colors.pink, radius: [0, 74, 0, 0] },
   { left: 207.38, top: 76.5, width: 104.78, height: 38.25, color: colors.pink, radius: [0, 0, 74, 0] },
@@ -114,6 +117,8 @@ function Header() {
   );
 }
 
+/* ---------- Ícones ---------- */
+
 function AppleIcon({ size = 24 }: { size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 384 512">
@@ -147,6 +152,8 @@ function GoogleIcon({ size = 24 }: { size?: number }) {
     </Svg>
   );
 }
+
+/* ---------- Blocos da tela ---------- */
 
 function Field({
   label,
@@ -209,6 +216,7 @@ function Logo() {
 
 export default function Cadastro() {
   const router = useRouter();
+  const { signUp } = useAuth();
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -234,45 +242,12 @@ export default function Cadastro() {
 
     setErro(null);
     setCarregando(true);
-
     try {
-      if (!auth || !db) {
-        throw new Error('Firebase não inicializado. Verifique o .env.local e reinicie o Expo.');
-      }
-
-      // Cria a conta
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        email.trim().toLowerCase(),
-        senha
-      );
-
-      const user = userCredential.user;
-
-      // Salva no Firestore
-      await setDoc(doc(db, 'usuarios', user.uid), {
-        nome: nome.trim(),
-        email: user.email,
-        criadoEm: new Date().toISOString(),
-      });
-
-      // Sucesso! Joga para a tela inicial
-      router.replace('/'); 
-      
-    } catch (e: any) {
-      let mensagem = 'Não foi possível criar a sua conta.';
-      
-      if (e.code === 'auth/email-already-in-use') {
-        mensagem = 'Este e-mail já está cadastrado.';
-      } else if (e.code === 'auth/invalid-email') {
-        mensagem = 'Formato de e-mail inválido.';
-      } else if (e.code === 'auth/network-request-failed') {
-        mensagem = 'Sem conexão à internet.';
-      } else if (e.message) {
-        mensagem = e.message;
-      }
-
-      setErro(mensagem);
+      // Cria a conta e o perfil em users/{uid}. Ao terminar, o layout leva
+      // o usuário para a tela inicial.
+      await signUp(nome, email.trim().toLowerCase(), senha);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível criar a sua conta.');
     } finally {
       setCarregando(false);
     }
@@ -403,6 +378,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     paddingBottom: 16,
   },
+
+  /* Topo decorativo */
   header: {
     width: '100%',
     overflow: 'hidden',
@@ -411,12 +388,15 @@ const styles = StyleSheet.create({
     width: ART_WIDTH,
     height: ART_HEIGHT,
   },
+
+  /* Conteúdo principal: padding 0 16 16, gap 16 */
   content: {
     alignItems: 'center',
     paddingHorizontal: 16,
     gap: 16,
     alignSelf: 'stretch',
   },
+
   titleBox: {
     alignSelf: 'stretch',
     paddingVertical: 8,
@@ -428,6 +408,8 @@ const styles = StyleSheet.create({
     letterSpacing: -0.64,
     color: colors.text,
   },
+
+  /* Campos */
   field: {
     alignSelf: 'stretch',
   },
@@ -452,10 +434,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     color: colors.text,
   },
+
   inputPoppins: {
     fontFamily: fonts.poppins,
     lineHeight: 15,
   },
+
+  /* Termos de uso */
   termsRow: {
     alignSelf: 'stretch',
     flexDirection: 'row',
@@ -495,6 +480,8 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     textAlign: 'center',
   },
+
+  /* Botão principal */
   primaryButtonBox: {
     alignSelf: 'stretch',
     alignItems: 'center',
@@ -522,6 +509,8 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.8,
   },
+
+  /* Divisória com "Ou" */
   divider: {
     alignSelf: 'stretch',
     height: 17,
@@ -546,6 +535,8 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     color: colors.black,
   },
+
+  /* Apple / Google */
   socialButtons: {
     alignItems: 'center',
     gap: 10,
@@ -567,6 +558,8 @@ const styles = StyleSheet.create({
     fontFamily: fonts.medium,
     color: colors.black,
   },
+
+  /* Rodapé */
   loginRow: {
     flexDirection: 'row',
     alignItems: 'center',
