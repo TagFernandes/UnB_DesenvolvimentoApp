@@ -2,6 +2,7 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import type { User } from 'firebase/auth';
 import { deleteDoc, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 
 import { db } from './firebase';
 
@@ -86,6 +87,7 @@ export async function enviarFotoPerfil(usuario: User, uri: string): Promise<stri
     atualizadoEm: serverTimestamp(),
   });
 
+  cacheFotos.set(usuario.uid, Promise.resolve(foto));
   return foto;
 }
 
@@ -103,4 +105,44 @@ export async function removerFotoPerfil(uid: string): Promise<void> {
     throw new Error('Firebase não configurado. Preencha o .env.local e reinicie o servidor.');
   }
   await deleteDoc(doc(db, COLECAO_FOTOS, uid));
+  cacheFotos.set(uid, Promise.resolve(null));
+}
+
+/**
+ * Fotos já buscadas nesta sessão, por uid. Guarda a Promise para que vários
+ * avatares do mesmo autor (ex.: vários comentários) façam uma leitura só.
+ */
+const cacheFotos = new Map<string, Promise<string | null>>();
+
+/** Igual a buscarFotoPerfil, mas reaproveita o resultado das buscas anteriores. */
+export function buscarFotoPerfilEmCache(uid: string): Promise<string | null> {
+  const emCache = cacheFotos.get(uid);
+  if (emCache) return emCache;
+
+  const busca = buscarFotoPerfil(uid).catch(() => {
+    // Sem cache em caso de erro, para tentar de novo na próxima vez.
+    cacheFotos.delete(uid);
+    return null;
+  });
+  cacheFotos.set(uid, busca);
+  return busca;
+}
+
+/** Foto de perfil de um usuário para os avatares em miniatura; null mostra as iniciais. */
+export function useFotoPerfil(uid: string | null | undefined): string | null {
+  const [foto, setFoto] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFoto(null);
+    if (!uid) return;
+    let ativo = true;
+    void buscarFotoPerfilEmCache(uid).then((resultado) => {
+      if (ativo) setFoto(resultado);
+    });
+    return () => {
+      ativo = false;
+    };
+  }, [uid]);
+
+  return foto;
 }

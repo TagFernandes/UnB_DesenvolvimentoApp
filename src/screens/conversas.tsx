@@ -6,6 +6,7 @@ import {
   Text,
   TextInput,
   FlatList,
+  Image,
   ScrollView,
   Pressable,
   StyleSheet,
@@ -27,6 +28,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { useFotoPerfil } from '../lib/fotoPerfil';
 
 /* ------------------------------------------------------------------ */
 /* Design tokens                                                       */
@@ -105,6 +107,7 @@ type Post = {
   body: string;
   category: CategoryCode;
   author: string;
+  authorUid: string;
   initials: string;
   time: string;
   comments: number;
@@ -115,7 +118,7 @@ type Post = {
 type BadgeColors = { background: string; text: string };
 
 type ChipProps = { label: Filter; active: boolean; onPress: () => void };
-type AvatarProps = { initials: string; label: string; uri?: string };
+type AvatarProps = { initials: string; label: string; uid: string };
 type PostCardProps = {
   post: Post;
   onOpen: () => void;
@@ -152,6 +155,7 @@ const CATEGORY_COLORS: Record<CategoryCode, BadgeColors> = {
 
 type ConversationData = {
   author_name?: string;
+  author_uid?: string;
   body?: string;
   category?: CategoryCode;
   created_at?: Timestamp;
@@ -197,6 +201,7 @@ function mapConversation(id: string, data: ConversationData, liked: boolean): Po
     body: data.body ?? '',
     category,
     author,
+    authorUid: data.author_uid ?? '',
     initials: initials || 'M',
     time: formatTime(readDate(data)),
     comments: data.reply_count ?? 0,
@@ -208,10 +213,15 @@ function mapConversation(id: string, data: ConversationData, liked: boolean): Po
 /* ------------------------------------------------------------------ */
 /* Components                                                          */
 /* ------------------------------------------------------------------ */
-function Avatar({ initials, label }: AvatarProps): React.JSX.Element {
+function Avatar({ initials, label, uid }: AvatarProps): React.JSX.Element {
+  const foto = useFotoPerfil(uid);
   return (
     <View style={styles.avatarSmall} accessibilityLabel={label}>
-      <Text style={styles.avatarInitials}>{initials}</Text>
+      {foto ? (
+        <Image source={{ uri: foto }} style={styles.avatarImage} />
+      ) : (
+        <Text style={styles.avatarInitials}>{initials}</Text>
+      )}
     </View>
   );
 }
@@ -255,7 +265,7 @@ function PostCard({ post, onOpen, onToggleLike, likeDisabled }: PostCardProps): 
 
       <View style={styles.cardFooter}>
         <View style={styles.authorRow}>
-          <Avatar initials={post.initials} label={`Foto de ${post.author}`} />
+          <Avatar initials={post.initials} label={`Foto de ${post.author}`} uid={post.authorUid} />
           <Text style={styles.authorText}>
             {post.author} • {post.time}
           </Text>
@@ -743,7 +753,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.avatarBg,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
     marginRight: spacing.sm,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   avatarInitials: {
     fontSize: fontSizes.initials,

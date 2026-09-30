@@ -20,6 +20,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   ListRenderItem,
   Platform,
@@ -32,6 +33,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { auth, db } from '../lib/firebase';
+import { useFotoPerfil } from '../lib/fotoPerfil';
 
 const colors = {
   background: '#FDF4F6',
@@ -125,6 +127,19 @@ function mapComment(id: string, data: CommentData): Comment {
     body: data.body ?? '',
     time: formatTime(data.created_at?.toDate()),
   };
+}
+
+function CommentAvatar({ comment }: { comment: Comment }): React.JSX.Element {
+  const foto = useFotoPerfil(comment.authorUid);
+  return (
+    <View style={styles.avatar} accessibilityLabel={`Foto de ${comment.author}`}>
+      {foto ? (
+        <Image source={{ uri: foto }} style={styles.avatarImage} />
+      ) : (
+        <Text style={styles.avatarText}>{comment.initials}</Text>
+      )}
+    </View>
+  );
 }
 
 export default function ConversaScreen(): React.JSX.Element {
@@ -437,9 +452,7 @@ export default function ConversaScreen(): React.JSX.Element {
 
   const renderComment: ListRenderItem<Comment> = ({ item }) => (
     <View style={styles.comment}>
-      <View style={styles.avatar} accessibilityLabel={`Foto de ${item.author}`}>
-        <Text style={styles.avatarText}>{item.initials}</Text>
-      </View>
+      <CommentAvatar comment={item} />
       <View style={styles.commentContent}>
         <Text style={styles.commentMeta}>
           <Text style={styles.commentAuthor}>{item.author}</Text> • {item.time}
@@ -625,8 +638,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.avatarBg,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
     marginRight: 10,
   },
+  avatarImage: { width: '100%', height: '100%' },
   avatarText: { fontSize: 11, fontWeight: '700', color: colors.avatarText },
   commentContent: { flex: 1 },
   commentMeta: { fontSize: 12, color: colors.secondary },
