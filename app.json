@@ -10,13 +10,17 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.mapeei.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "scheme": "mapeei",
     "web": {
@@ -27,7 +31,6 @@
       "expo-router",
       "expo-font",
       "expo-splash-screen",
-      "expo-router",
       [
         "expo-image-picker",
         {
@@ -35,6 +38,12 @@
           "cameraPermission": "O mapeei precisa acessar a câmera para você tirar a foto de perfil."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "909aa052-ad6b-4ef7-8cb5-740a1e160d23"
+      }
+    }
   }
 }
