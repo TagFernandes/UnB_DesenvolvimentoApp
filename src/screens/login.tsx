@@ -1,18 +1,25 @@
-import PatterHeader from '../components/PatternHeader';
-import { useAuth } from '../contexts/AuthContext';
-
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
-  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
-  Pressable,
   View,
 } from 'react-native';
+
+import Field from '../components/AuthScreens/Field';
+import Header from '../components/AuthScreens/Header';
+import Logo from '../components/AuthScreens/Logo';
+import SocialButton from '../components/AuthScreens/SocialButton';
+import AppleIcon from '../components/icons/AppleIcon';
+import GoogleIcon from '../components/icons/GoogleIcon';
+import { useAuth } from '../contexts/AuthContext';
+import { colors } from '../theme/colors';
+import { fonts } from '../theme/fonts';
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
@@ -41,228 +48,255 @@ export default function LoginScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-        <View style={styles.patternHeaderBleed}>
-          <PatterHeader />
-        </View>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Header />
 
-        <View style={ styles.titleContainer }>
-          <Text style={styles.title}>Bem-vindo(a) de volta!</Text>
-          <Text style={styles.subtitle}>Entre com suas credenciais para acessar sua conta.</Text>
-        </View>
-
-        <View style={styles.inputContainer}>
-          <View style={styles.iconWrapper}>
-            <Text style={styles.emailLabel}>E-mail</Text>
+        <View style={styles.content}>
+          <View style={styles.titleBox}>
+            <Text style={styles.title}>Comece agora com o mapeei!</Text>
           </View>
 
-          <View style={styles.textFieldWrapper}>
-            <TextInput
-              style={styles.input}
-              placeholder="Digite seu e-mail"
-              placeholderTextColor="#AAAAAA"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="email"
-              textContentType="emailAddress"
-              returnKeyType="next"
-            />
+          <Field
+            label="E-mail"
+            placeholder="Digite seu e-mail"
+            value={email}
+            onChangeText={setEmail}
+            editable={!carregando}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
+          />
+
+          <Field
+            label="Senha"
+            placeholder="Digite uma senha"
+            value={senha}
+            onChangeText={setSenha}
+            editable={!carregando}
+            inputStyle={styles.inputPoppins}
+            secureTextEntry
+            autoCapitalize="none"
+            autoComplete="new-password"
+            textContentType="newPassword"
+            returnKeyType="done"
+            onSubmitEditing={handleLogin}
+          />
+
+          {erro ? (
+            <Text style={styles.errorText} accessibilityLiveRegion="polite">
+              {erro}
+            </Text>
+          ) : null}
+
+
+          <View style={styles.primaryButtonBox}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.primaryButton,
+                (pressed || carregando) && styles.pressed,
+              ]}
+              onPress={handleLogin}
+              disabled={carregando}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: carregando, busy: carregando }}
+            >
+              {carregando ? (
+                <ActivityIndicator color={colors.white} />
+              ) : (
+                <Text style={styles.primaryButtonText}>Inscreva-se</Text>
+              )}
+            </Pressable>
           </View>
-        </View>
 
-        <View style={styles.inputContainer}>
-          <View style={styles.iconWrapper}>
-            <Text style={styles.emailLabel}>Senha</Text>
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <View style={styles.dividerLabelBox}>
+              <Text style={styles.dividerLabel}>Ou</Text>
+            </View>
           </View>
 
-          <View style={styles.textFieldWrapper}>
-            <TextInput
-              style={styles.input}
-              placeholder="Digite sua senha"
-              placeholderTextColor="#AAAAAA"
-              secureTextEntry
-              value={senha}
-              onChangeText={setSenha}
-              autoCapitalize="none"
-              autoComplete="current-password"
-              textContentType="password"
-              returnKeyType="go"
-              onSubmitEditing={handleLogin}
-            />
+          <View style={styles.socialButtons}>
+            <SocialButton icon={<AppleIcon />} label="Inscreva-se com Apple" />
+            <SocialButton icon={<GoogleIcon />} label="Inscreva-se com Google" />
           </View>
+
+          <View style={styles.loginRow}>
+            <Text style={styles.loginText}>Não tem uma conta? </Text>
+            <Pressable
+              accessibilityRole="link"
+              onPress={() => router.navigate('/cadastro')}
+              disabled={carregando}
+            >
+              <Text style={styles.loginLink}>Crie agora</Text>
+            </Pressable>
+          </View>
+
+          <Logo />
         </View>
-
-        {erro ? (
-          <Text style={styles.errorText} accessibilityLiveRegion="polite">
-            {erro}
-          </Text>
-        ) : null}
-
-        <View style={styles.loginButtonFrame}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.loginButton,
-              (pressed || carregando) && styles.loginButtonPressed,
-            ]}
-            onPress={handleLogin}
-            disabled={carregando}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: carregando, busy: carregando }}
-          >
-            {carregando ? (
-              <ActivityIndicator color="#FAFBF8" />
-            ) : (
-              <Text style={styles.loginButtonText}>Login</Text>
-            )}
-          </Pressable>
-        </View>
-
-        <View style={styles.signupContainer}>
-          <Text style={styles.signupText}>
-            Não tem uma conta?{' '}
-              <Text style={styles.signupLink} onPress={() => router.navigate('/cadastro')}>
-                Crie agora
-              </Text>
-
-          </Text>
-        </View>
-
-        <View style={styles.logoContainer}>
-          <Image
-              source={require('../../assets/images/logo_mapeei.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-        </View>
-    </SafeAreaView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
+
 const styles = StyleSheet.create({
-  patternHeaderBleed: {
-    marginHorizontal: -16,
-  },
   container: {
     flex: 1,
-    backgroundColor: '#FEF8F8',
-    paddingHorizontal: 16,
+    backgroundColor: colors.background,
+  },
+  scroll: {
+    backgroundColor: colors.background,
     paddingBottom: 16,
+  },
+
+  /* Conteúdo principal: padding 0 16 16, gap 16 */
+  content: {
+    alignItems: 'center',
+    paddingHorizontal: 16,
     gap: 16,
+    alignSelf: 'stretch',
+  },
+
+  titleBox: {
+    alignSelf: 'stretch',
+    paddingVertical: 8,
   },
   title: {
-    fontWeight: '700',
     fontSize: 32,
-    lineHeight: 44.8,
+    lineHeight: 38.4,
+    fontFamily: fonts.bold,
     letterSpacing: -0.64,
-    color: '#1A1A1A',
-    textAlign: 'center',
+    color: colors.text,
   },
-  subtitle: {
-    fontWeight: '400',
-    fontSize: 14,
-    lineHeight: 22.96,
-    letterSpacing: -0.28,
-    color: '#AAAAAA',
-    textAlign: 'center',
+
+  inputPoppins: {
+    fontFamily: fonts.poppins,
+    lineHeight: 15,
   },
-  titleContainer: {
-    width: '100%', // era 387
-    paddingTop: 8,
-    paddingHorizontal: 16,
-    gap: 10,
-    flexDirection: 'column',
+
+  /* Termos de uso */
+  termsRow: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
     alignItems: 'center',
-    // height removido
+    gap: 9.5,
   },
-  input: {
-    fontWeight: '400',
-    fontSize: 10,
-    lineHeight: 10,
-    letterSpacing: 0,
-    color: '#1A1A1A', // era #D9D9D9, que deixava o texto digitado quase invisível
-  },
-  inputContainer: {
-    width: '100%',
-    // height removido — cresce sozinho com iconWrapper + textFieldWrapper
-  },
-  iconWrapper: {
-    paddingVertical: 8,
-    gap: 10,
-  },
-  textFieldWrapper: {
-    width: '100%',
-    minHeight: 32, // era height: 32
-    paddingTop: 10,
-    paddingBottom: 10,
-    paddingLeft: 10,
-    gap: 10,
-    borderRadius: 9999,
+  checkbox: {
+    width: 14.57,
+    height: 13.79,
     borderWidth: 1,
-    borderColor: '#D9D9D9',
+    borderColor: colors.black,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  emailLabel: {
-    fontWeight: '400',
-    fontSize: 16,
-    lineHeight: 16,
-    letterSpacing: 0,
-    color: '#1A1A1A',
+  checkboxChecked: {
+    backgroundColor: colors.maroon,
+    borderColor: colors.maroon,
+  },
+  checkboxMark: {
+    color: colors.white,
+    fontSize: 10,
+    lineHeight: 12,
+    fontFamily: fonts.medium,
+  },
+  termsText: {
+    fontSize: 12,
+    lineHeight: 15,
+    fontFamily: fonts.medium,
+    color: colors.black,
   },
   errorText: {
+    alignSelf: 'stretch',
+    color: '#B3261E',
+    fontFamily: fonts.regular,
     fontSize: 13,
     lineHeight: 18,
-    color: '#B3261E',
     textAlign: 'center',
   },
-  loginButtonFrame: {
-    width: '100%', // era 361 fixo
-    paddingHorizontal: 27, // substitui o left: 27 do botão
-  },
-  loginButton: {
-    width: '100%', // preenche o espaço restante do frame, após o padding
-    minHeight: 48, // era height: 48 fixo
-    borderRadius: 9999,
-    backgroundColor: '#832D51',
-    justifyContent: 'center',
+
+  /* Botão principal */
+  primaryButtonBox: {
+    alignSelf: 'stretch',
     alignItems: 'center',
   },
-  loginButtonPressed: {
+  primaryButton: {
+    width: 316,
+    maxWidth: '100%',
+    height: 48,
+    borderRadius: 9999,
+    backgroundColor: colors.maroon,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  primaryButtonText: {
+    fontSize: 16,
+    lineHeight: 19,
+    fontFamily: fonts.medium,
+    color: colors.background,
+  },
+  pressed: {
     opacity: 0.8,
   },
-  loginButtonText: {
-    fontWeight: '500',
-    fontSize: 16,
-    lineHeight: 16,
-    letterSpacing: 0,
-    color: '#FAFBF8',
+
+  /* Divisória com "Ou" */
+  divider: {
+    alignSelf: 'stretch',
+    height: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  logoContainer: {
-    width: '100%',
-    alignItems: 'center', // centraliza o logo horizontalmente
-    marginTop: 'auto', // empurra pro final da tela (se o container pai for flex)
+  dividerLine: {
+    position: 'absolute',
+    left: -16,
+    right: -16,
+    top: 8,
+    height: 2,
+    backgroundColor: colors.line,
   },
-  logo: {
-    width: 96,
-    height: 54,
-    },
-  signupContainer: {
+  dividerLabelBox: {
+    paddingHorizontal: 3,
+    backgroundColor: colors.background,
+  },
+  dividerLabel: {
+    fontSize: 14,
+    lineHeight: 17,
+    fontFamily: fonts.medium,
+    color: colors.black,
+  },
+
+  /* Apple / Google */
+  socialButtons: {
+    alignItems: 'center',
     gap: 10,
+  },
+  /* Rodapé */
+  loginRow: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  signupText: {
-    fontWeight: '500',
+  loginText: {
     fontSize: 14,
-    lineHeight: 14,
-    letterSpacing: 0,
-    color: '#1A1A1A',
-    textAlign: 'center',
+    lineHeight: 17,
+    fontFamily: fonts.medium,
+    color: colors.black,
   },
-  signupLink: {
-    fontWeight: '500',
+  loginLink: {
     fontSize: 14,
-    lineHeight: 14,
-    letterSpacing: 0,
-    color: '#E96E97',
+    lineHeight: 17,
+    fontFamily: fonts.medium,
+    color: colors.pink,
   },
 });
