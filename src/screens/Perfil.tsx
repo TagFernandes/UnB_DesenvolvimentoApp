@@ -1,5 +1,6 @@
 import { FirebaseError } from 'firebase/app';
 import { doc, getDoc } from 'firebase/firestore';
+import { useRouter } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -113,6 +114,20 @@ const rowIcons = {
     <Icon size={16} color={color}>
       <Circle cx={11} cy={11} r={8} />
       <Path d="m21 21-4.34-4.34" />
+    </Icon>
+  ),
+  forum: (color: string) => (
+    <Icon size={16} color={color}>
+      <Path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 8.4 8.4 0 0 1-4-.99L3 21l1.99-5.5a8.4 8.4 0 0 1-.99-4A8.5 8.5 0 0 1 12.5 3h.5a8.5 8.5 0 0 1 8 8v.5Z" />
+      <Circle cx={8} cy={12} r={0.5} />
+      <Circle cx={12} cy={12} r={0.5} />
+      <Circle cx={16} cy={12} r={0.5} />
+    </Icon>
+  ),
+  chats: (color: string) => (
+    <Icon size={16} color={color}>
+      <Path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5H8l-5 3v-6.5A7.5 7.5 0 0 1 10.5 8H13a8 8 0 0 1 8 3.5Z" />
+      <Path d="M7 4h7a6 6 0 0 1 6 6" />
     </Icon>
   ),
   configuracoes: (color: string) => (
@@ -369,6 +384,7 @@ function avisar(titulo: string, mensagem: string) {
 
 export default function Perfil() {
   const { signOut } = useAuth();
+  const router = useRouter();
   const { user, nome, usuario, fotoUrl, setFotoUrl } = usePerfil();
   const [opcoesVisiveis, setOpcoesVisiveis] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -453,6 +469,14 @@ export default function Perfil() {
               itens={[
                 { label: 'Notificações', icon: 'notificacoes' },
                 { label: 'Preferências de busca', icon: 'busca' },
+              ]}
+            />
+
+            <Secao
+              titulo="Comunicação"
+              itens={[
+                { label: 'Fórum', icon: 'forum', onPress: () => router.push('/forum') },
+                { label: 'Chats', icon: 'chats', onPress: () => router.push('/chats') },
               ]}
             />
 
