@@ -9,6 +9,7 @@ import {
   Image,
   ScrollView,
   Pressable,
+  Modal,
   StyleSheet,
   useWindowDimensions,
   ListRenderItem,
@@ -118,10 +119,11 @@ type Post = {
 type BadgeColors = { background: string; text: string };
 
 type ChipProps = { label: Filter; active: boolean; onPress: () => void };
-type AvatarProps = { initials: string; label: string; uid: string };
+type AvatarProps = { initials: string; label: string; uid: string; onPress: () => void };
 type PostCardProps = {
   post: Post;
   onOpen: () => void;
+  onOpenAuthor: () => void;
   onToggleLike: () => void;
   likeDisabled: boolean;
 };
@@ -213,16 +215,26 @@ function mapConversation(id: string, data: ConversationData, liked: boolean): Po
 /* ------------------------------------------------------------------ */
 /* Components                                                          */
 /* ------------------------------------------------------------------ */
-function Avatar({ initials, label, uid }: AvatarProps): React.JSX.Element {
+function Avatar({ initials, label, uid, onPress }: AvatarProps): React.JSX.Element {
   const foto = useFotoPerfil(uid);
   return (
-    <View style={styles.avatarSmall} accessibilityLabel={label}>
-      {foto ? (
-        <Image source={{ uri: foto }} style={styles.avatarImage} />
-      ) : (
-        <Text style={styles.avatarInitials}>{initials}</Text>
-      )}
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={6}
+      onPress={(event) => {
+        event.stopPropagation();
+        onPress();
+      }}
+    >
+      <View style={styles.avatarSmall}>
+        {foto ? (
+          <Image source={{ uri: foto }} style={styles.avatarImage} />
+        ) : (
+          <Text style={styles.avatarInitials}>{initials}</Text>
+        )}
+      </View>
+    </Pressable>
   );
 }
 
@@ -242,7 +254,13 @@ function Chip({ label, active, onPress }: ChipProps): React.JSX.Element {
   );
 }
 
-function PostCard({ post, onOpen, onToggleLike, likeDisabled }: PostCardProps): React.JSX.Element {
+function PostCard({
+  post,
+  onOpen,
+  onOpenAuthor,
+  onToggleLike,
+  likeDisabled,
+}: PostCardProps): React.JSX.Element {
   const badge = CATEGORY_COLORS[post.category];
 
   return (
@@ -265,7 +283,12 @@ function PostCard({ post, onOpen, onToggleLike, likeDisabled }: PostCardProps): 
 
       <View style={styles.cardFooter}>
         <View style={styles.authorRow}>
-          <Avatar initials={post.initials} label={`Foto de ${post.author}`} uid={post.authorUid} />
+          <Avatar
+            initials={post.initials}
+            label={`Abrir perfil de ${post.author}`}
+            uid={post.authorUid}
+            onPress={onOpenAuthor}
+          />
           <Text style={styles.authorText}>
             {post.author} • {post.time}
           </Text>
@@ -312,7 +335,68 @@ export default function ConversasScreen(): React.JSX.Element {
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<Filter>('Todas');
   const [likingPostIds, setLikingPostIds] = useState<string[]>([]);
+  const [selectedAuthor, setSelectedAuthor] = useState<Post | null>(null);
+  const [openingChatUid, setOpeningChatUid] = useState<string | null>(null);
+  const authorPhoto = useFotoPerfil(selectedAuthor?.authorUid);
   const inFlightLikes = useRef(new Set<string>());
+
+  async function openDirectChat(author: Post): Promise<void> {
+    const firestore = db;
+    const currentUserId = auth?.currentUser?.uid;
+
+    if (!firestore || !currentUserId) {
+      Alert.alert('Entre na sua conta', 'É necessário entrar para mandar uma mensagem.');
+      return;
+    }
+    if (!author.authorUid || author.authorUid === currentUserId) {
+      Alert.alert('Não foi possível abrir o chat', 'Você não pode iniciar um chat com este usuário.');
+      return;
+    }
+
+    setOpeningChatUid(author.authorUid);
+    try {
+      const chatsQuery = query(
+        collection(firestore, 'chats'),
+        where('participants', 'array-contains', currentUserId),
+      );
+      const snapshot = await getDocs(chatsQuery);
+      const directChats = snapshot.docs.filter((chatDocument) => {
+        const participants = chatDocument.data().participants;
+        return Array.isArray(participants)
+          && participants.length === 2
+          && participants.includes(currentUserId)
+          && participants.includes(author.authorUid);
+      });
+      directChats.sort((first, second) => {
+        const firstAt = first.data().lastMessageAt;
+        const secondAt = second.data().lastMessageAt;
+        const firstMillis = firstAt instanceof Timestamp ? firstAt.toMillis() : 0;
+        const secondMillis = secondAt instanceof Timestamp ? secondAt.toMillis() : 0;
+        return secondMillis - firstMillis;
+      });
+
+      const existingChat = directChats[0];
+      setSelectedAuthor(null);
+      if (existingChat) {
+        router.push({
+          pathname: '/chat',
+          params: { chatId: existingChat.id, title: author.author },
+        });
+      } else {
+        router.push({
+          pathname: '/chat',
+          params: { recipientUid: author.authorUid, title: author.author },
+        });
+      }
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível abrir o chat',
+        error instanceof Error ? error.message : 'Verifique sua conexão e tente novamente.',
+      );
+    } finally {
+      setOpeningChatUid(null);
+    }
+  }
 
   // Recarrega ao voltar para a tela, para refletir comentários e curtidas feitos na conversa.
   useFocusEffect(useCallback(() => {
@@ -441,6 +525,7 @@ export default function ConversasScreen(): React.JSX.Element {
         }
         onToggleLike={() => void toggleLike(item)}
         likeDisabled={likingPostIds.includes(item.id)}
+        onOpenAuthor={() => setSelectedAuthor(item)}
       />
     </View>
   );
@@ -535,6 +620,54 @@ export default function ConversasScreen(): React.JSX.Element {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />
+
+        <Modal
+          animationType="fade"
+          transparent
+          visible={selectedAuthor !== null}
+          onRequestClose={() => setSelectedAuthor(null)}
+        >
+          <View style={styles.profileModalOverlay}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Fechar perfil"
+              style={StyleSheet.absoluteFill}
+              onPress={() => setSelectedAuthor(null)}
+            />
+            {selectedAuthor && (
+              <View style={styles.profileModal}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Fechar perfil"
+                  hitSlop={10}
+                  style={styles.profileModalClose}
+                  onPress={() => setSelectedAuthor(null)}
+                >
+                  <Ionicons name="close" size={22} color={colors.textSecondary} />
+                </Pressable>
+                <View style={styles.profileModalAvatar}>
+                  {authorPhoto ? (
+                    <Image source={{ uri: authorPhoto }} style={styles.profileModalAvatarImage} />
+                  ) : (
+                    <Text style={styles.profileModalInitials}>{selectedAuthor.initials}</Text>
+                  )}
+                </View>
+                <Text style={styles.profileModalName}>{selectedAuthor.author}</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Mandar mensagem"
+                  style={[styles.messageButton, openingChatUid && styles.messageButtonDisabled]}
+                  disabled={openingChatUid !== null}
+                  onPress={() => void openDirectChat(selectedAuthor)}
+                >
+                  <Text style={styles.messageButtonText}>
+                    {openingChatUid === selectedAuthor.authorUid ? 'Abrindo chat...' : 'Mandar mensagem'}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        </Modal>
 
         <Pressable
           accessibilityRole="button"
@@ -785,6 +918,75 @@ const styles = StyleSheet.create({
   },
   statTextLiked: {
     color: colors.accent,
+  },
+  profileModalOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  profileModal: {
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xxl,
+    paddingBottom: spacing.xl,
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+  },
+  profileModalClose: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    width: sizes.minTouch,
+    height: sizes.minTouch,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileModalAvatar: {
+    width: 112,
+    height: 112,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderRadius: 56,
+    backgroundColor: colors.avatarBg,
+  },
+  profileModalAvatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  profileModalInitials: {
+    color: colors.avatarText,
+    fontSize: 32,
+    fontWeight: '700',
+  },
+  profileModalName: {
+    marginTop: spacing.lg,
+    color: colors.textPrimary,
+    fontSize: fontSizes.cardTitle,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  messageButton: {
+    minHeight: sizes.minTouch,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+  },
+  messageButtonDisabled: {
+    opacity: 0.7,
+  },
+  messageButtonText: {
+    color: colors.onAccent,
+    fontSize: fontSizes.subtitle,
+    fontWeight: '700',
   },
 
   /* Floating action button */
