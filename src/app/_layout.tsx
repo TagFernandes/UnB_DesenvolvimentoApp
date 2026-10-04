@@ -52,6 +52,8 @@ function RootNavigator() {
         <Stack.Screen name="index" options={{ animation: 'none' }} />
         <Stack.Screen name="forum" options={{ animation: 'none' }} />
         <Stack.Screen name="perfil" options={{ animation: 'none' }} />
+        <Stack.Screen name="chats" />
+        <Stack.Screen name="chat" />
         <Stack.Screen name="conversas" />
         <Stack.Screen name="conversa" />
         <Stack.Screen name="nova-conversa" />

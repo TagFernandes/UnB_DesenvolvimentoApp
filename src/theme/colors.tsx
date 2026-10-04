@@ -10,3 +10,17 @@ export const colors = {
   line: '#F5F5F5',
   white: '#FFFFFF',
 };
+
+export const chatColors = {
+  background: colors.background,
+  surface: colors.white,
+  border: colors.border,
+  text: colors.text,
+  body: '#4A4A4E',
+  secondary: '#686868',
+  accent: colors.maroon,
+  accentDark: '#63213D',
+  avatarBg: '#F3E8ED',
+  avatarText: colors.maroon,
+  white: colors.white,
+} as const;
