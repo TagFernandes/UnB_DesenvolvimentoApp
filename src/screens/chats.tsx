@@ -4,12 +4,14 @@ import {
   collection,
   doc,
   getDoc,
-  getDocs,
+  onSnapshot,
   query,
   Timestamp,
   where,
+  type Firestore,
+  type QueryDocumentSnapshot,
 } from 'firebase/firestore';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -77,16 +79,14 @@ function formatTime(date?: Date): string {
   );
 }
 
-async function loadChats(userId: string): Promise<Chat[]> {
-  const firestore = db;
-  if (!firestore) throw new Error('Firebase não está configurado.');
-
-  const chatsQuery = query(
-    collection(firestore, 'chats'),
-    where('participants', 'array-contains', userId),
-  );
-  const snapshot = await getDocs(chatsQuery);
-  const chatDocuments = snapshot.docs.map((chatDocument) => ({
+// Os nomes ficam em cache entre atualizações para não buscar o perfil de todo mundo a cada mensagem.
+async function buildChats(
+  firestore: Firestore,
+  userId: string,
+  docs: QueryDocumentSnapshot[],
+  participantNames: Map<string, string>,
+): Promise<Chat[]> {
+  const chatDocuments = docs.map((chatDocument) => ({
     id: chatDocument.id,
     data: chatDocument.data() as ChatData,
   }));
@@ -98,9 +98,8 @@ async function loadChats(userId: string): Promise<Chat[]> {
           .filter((participantId) => participantId !== userId),
       ),
     ),
-  ];
+  ].filter((participantId) => !participantNames.has(participantId));
 
-  const participantNames = new Map<string, string>();
   await Promise.all(otherParticipantIds.map(async (participantId) => {
     const profile = await getDoc(doc(firestore, 'users', participantId));
     const name = profile.data()?.nome;
@@ -181,34 +180,61 @@ export default function ChatsScreen(): React.JSX.Element {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const participantNamesRef = useRef(new Map<string, string>());
 
+  // Escuta os chats em tempo real enquanto a tela está em foco.
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      // Garante que uma atualização lenta não sobrescreva uma mais recente.
+      let latestSnapshot = 0;
+      setLoading(true);
+      setError(null);
 
-      async function refreshChats(): Promise<void> {
-        setLoading(true);
-        setError(null);
-        try {
-          const userId = auth?.currentUser?.uid;
-          if (!userId) throw new Error('Entre na sua conta para ver seus chats.');
-          const items = await loadChats(userId);
-          if (active) setChats(items);
-        } catch (loadError) {
-          if (active) {
-            setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar os chats.');
-          }
-        } finally {
-          if (active) {
-            setLoading(false);
-            setRefreshing(false);
-          }
-        }
+      const firestore = db;
+      const userId = auth?.currentUser?.uid;
+      if (!firestore || !userId) {
+        setError(firestore ? 'Entre na sua conta para ver seus chats.' : 'Firebase não está configurado.');
+        setLoading(false);
+        setRefreshing(false);
+        return undefined;
       }
 
-      void refreshChats();
+      const chatsQuery = query(
+        collection(firestore, 'chats'),
+        where('participants', 'array-contains', userId),
+      );
+      const stopListening = onSnapshot(
+        chatsQuery,
+        (snapshot) => {
+          const snapshotNumber = ++latestSnapshot;
+          buildChats(firestore, userId, snapshot.docs, participantNamesRef.current)
+            .then((items) => {
+              if (!active || snapshotNumber !== latestSnapshot) return;
+              setChats(items);
+              setError(null);
+            })
+            .catch((loadError) => {
+              if (!active) return;
+              setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar os chats.');
+            })
+            .finally(() => {
+              if (!active) return;
+              setLoading(false);
+              setRefreshing(false);
+            });
+        },
+        (listenerError) => {
+          if (!active) return;
+          setError(listenerError.message || 'Não foi possível carregar os chats.');
+          setLoading(false);
+          setRefreshing(false);
+        },
+      );
+
       return () => {
         active = false;
+        stopListening();
       };
     }, [reloadKey]),
   );
@@ -277,6 +303,8 @@ export default function ChatsScreen(): React.JSX.Element {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => {
+              // A lista já é em tempo real; puxar para atualizar recarrega nomes e reconecta.
+              participantNamesRef.current = new Map();
               setRefreshing(true);
               setReloadKey((current) => current + 1);
             }}

@@ -23,4 +23,6 @@ export const chatColors = {
   avatarBg: '#F3E8ED',
   avatarText: colors.maroon,
   white: colors.white,
+  disabled: '#E4E4E7',
+  disabledText: '#9A9AA0',
 } as const;

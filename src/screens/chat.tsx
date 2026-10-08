@@ -14,14 +14,25 @@ import {
   startAfter,
   Timestamp,
   limit,
+  updateDoc,
   writeBatch,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Keyboard,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { auth, db } from '../lib/firebase';
+import { useFotoPerfil } from '../lib/fotoPerfil';
 import { chatColors as colors } from '../theme/colors';
 
 type MessageData = {
@@ -66,12 +77,28 @@ function resolveLegacyDirectChatIds(chatId: string | undefined, recipientUid?: s
   return [...candidates];
 }
 
+// Retorna null para mensagens malformadas, para que um único documento ruim não quebre o chat inteiro.
+function sortMessages(messages: Iterable<IMessage>): IMessage[] {
+  return [...messages].sort((first, second) =>
+    new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime(),
+  );
+}
+
+function getInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toLocaleUpperCase('pt-BR') || 'C';
+}
+
 function mapMessage(
   messageDocument: QueryDocumentSnapshot,
-): IMessage {
+): IMessage | null {
   const data = messageDocument.data({ serverTimestamps: 'estimate' }) as MessageData;
   if (typeof data.text !== 'string' || typeof data.senderId !== 'string') {
-    throw new Error(`A mensagem ${messageDocument.id} tem dados inválidos.`);
+    return null;
   }
 
   const createdAt = data.createdAt instanceof Timestamp
@@ -80,7 +107,7 @@ function mapMessage(
       ? new Date()
       : null;
   if (!createdAt) {
-    throw new Error(`A mensagem ${messageDocument.id} não tem uma data válida.`);
+    return null;
   }
 
   return {
@@ -107,11 +134,50 @@ export default function ChatScreen(): React.JSX.Element {
   const [chatReady, setChatReady] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ _id: string; name: string } | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [text, setText] = useState('');
+  const [otherUid, setOtherUid] = useState<string | null>(null);
+  const [fetchedTitle, setFetchedTitle] = useState<string | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const otherPhoto = useFotoPerfil(otherUid);
+  const headerTitle = title || fetchedTitle || 'Chat';
+  // ID do documento realmente encontrado (pode ser um ID legado diferente do parâmetro chatId).
+  const resolvedChatIdRef = useRef<string | null>(null);
   const oldestMessageRef = useRef<QueryDocumentSnapshot | null>(null);
   const hasMoreMessagesRef = useRef(true);
   const isLoadingEarlierRef = useRef(false);
   const hasInitializedCursorRef = useRef(false);
   const loadedMessageIdsRef = useRef(new Map<string, IMessage>());
+  const lastReadMessageIdRef = useRef<string | null>(null);
+  // Evita criar o chat duas vezes enquanto a primeira mensagem ainda está sendo enviada.
+  const isCreatingChatRef = useRef(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  // Sem título nos parâmetros (ex.: deep link), busca o nome do outro participante.
+  useEffect(() => {
+    setFetchedTitle(null);
+    const firestore = db;
+    if (title || !otherUid || !firestore) return;
+    let active = true;
+    getDoc(doc(firestore, 'users', otherUid))
+      .then((profile) => {
+        const name = profile.data()?.nome;
+        if (active && typeof name === 'string' && name.trim()) setFetchedTitle(name.trim());
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [title, otherUid]);
 
   useEffect(() => {
     let active = true;
@@ -121,6 +187,9 @@ export default function ChatScreen(): React.JSX.Element {
     isLoadingEarlierRef.current = false;
     hasInitializedCursorRef.current = false;
     loadedMessageIdsRef.current = new Map();
+    resolvedChatIdRef.current = null;
+    lastReadMessageIdRef.current = null;
+    setOtherUid(null);
     setMessages([]);
     setIsLoadingEarlier(false);
     setHasEarlierMessages(false);
@@ -141,6 +210,7 @@ export default function ChatScreen(): React.JSX.Element {
           if (recipientUid === user.uid) throw new Error('Você não pode iniciar um chat consigo mesmo.');
           if (!active) return;
 
+          setOtherUid(recipientUid);
           setCurrentUser({ _id: user.uid, name: user.displayName || 'Você' });
           setChatReady(true);
           setLoading(false);
@@ -171,11 +241,17 @@ export default function ChatScreen(): React.JSX.Element {
         }
         if (!active) return;
 
+        const resolvedChatRef = chatRef;
+        resolvedChatIdRef.current = resolvedChatRef.id;
+        setOtherUid(
+          participants.find((participant): participant is string =>
+            typeof participant === 'string' && participant !== user.uid) ?? null,
+        );
         setCurrentUser({ _id: user.uid, name: user.displayName || 'Você' });
         setChatReady(true);
 
         const messagesQuery = query(
-          collection(chatRef, 'messages'),
+          collection(resolvedChatRef, 'messages'),
           orderBy('createdAt', 'desc'),
           limit(MESSAGE_PAGE_SIZE),
         );
@@ -183,32 +259,51 @@ export default function ChatScreen(): React.JSX.Element {
           messagesQuery,
           (snapshot) => {
             if (!active) return;
-            try {
-              if (!hasInitializedCursorRef.current) {
-                oldestMessageRef.current = snapshot.docs.at(-1) ?? null;
-                hasMoreMessagesRef.current = snapshot.docs.length === MESSAGE_PAGE_SIZE;
-                hasInitializedCursorRef.current = true;
-              }
-              snapshot.docs.forEach((messageDocument) => {
-                const mappedMessage = mapMessage(messageDocument);
-                loadedMessageIdsRef.current.set(String(mappedMessage._id), mappedMessage);
-              });
-              const nextMessages = [...loadedMessageIdsRef.current.values()]
-                .sort((first, second) =>
-                  new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime(),
-                );
-              setMessages(nextMessages);
-              setHasEarlierMessages(hasMoreMessagesRef.current);
-              setError(null);
-              setLoading(false);
-            } catch (mappingError) {
-              setError(
-                mappingError instanceof Error
-                  ? mappingError.message
-                  : 'Não foi possível interpretar as mensagens deste chat.',
-              );
-              setLoading(false);
+            if (!hasInitializedCursorRef.current) {
+              oldestMessageRef.current = snapshot.docs.at(-1) ?? null;
+              hasMoreMessagesRef.current = snapshot.docs.length === MESSAGE_PAGE_SIZE;
+              hasInitializedCursorRef.current = true;
             }
+            const changes = snapshot.docChanges();
+            changes.forEach((change) => {
+              if (change.type === 'removed') return;
+              const mappedMessage = mapMessage(change.doc);
+              if (mappedMessage) loadedMessageIdsRef.current.set(change.doc.id, mappedMessage);
+            });
+            // Uma mensagem nova empurra a mais antiga para fora da janela do limit(), e o
+            // Firestore reporta isso como 'removed'. Só apagamos o que estava dentro da janela.
+            const windowIsFull = snapshot.docs.length === MESSAGE_PAGE_SIZE;
+            const windowOldest = snapshot.docs.at(-1);
+            const windowOldestTime = windowOldest
+              ? loadedMessageIdsRef.current.get(windowOldest.id)?.createdAt
+              : undefined;
+            changes.forEach((change) => {
+              if (change.type !== 'removed') return;
+              const removedMessage = loadedMessageIdsRef.current.get(change.doc.id);
+              const shiftedOutOfWindow = windowIsFull
+                && removedMessage
+                && windowOldestTime
+                && new Date(removedMessage.createdAt).getTime() <= new Date(windowOldestTime).getTime();
+              if (!shiftedOutOfWindow) loadedMessageIdsRef.current.delete(change.doc.id);
+            });
+            const nextMessages = sortMessages(loadedMessageIdsRef.current.values());
+            setMessages(nextMessages);
+
+            // Marca como lido quando a mensagem mais recente é de outra pessoa.
+            const newestMessage = nextMessages[0];
+            if (
+              newestMessage
+              && newestMessage.user._id !== user.uid
+              && newestMessage._id !== lastReadMessageIdRef.current
+            ) {
+              lastReadMessageIdRef.current = String(newestMessage._id);
+              updateDoc(resolvedChatRef, { [`lastRead.${user.uid}`]: serverTimestamp() }).catch(() => {
+                lastReadMessageIdRef.current = null;
+              });
+            }
+            setHasEarlierMessages(hasMoreMessagesRef.current);
+            setError(null);
+            setLoading(false);
           },
           (listenerError) => {
             if (!active) return;
@@ -233,9 +328,10 @@ export default function ChatScreen(): React.JSX.Element {
   const loadEarlierMessages = useCallback(async (): Promise<void> => {
     const firestore = db;
     const cursor = oldestMessageRef.current;
+    const resolvedChatId = resolvedChatIdRef.current;
     if (
       !firestore ||
-      !chatId ||
+      !resolvedChatId ||
       !cursor ||
       !hasMoreMessagesRef.current ||
       isLoadingEarlierRef.current
@@ -248,24 +344,21 @@ export default function ChatScreen(): React.JSX.Element {
     setError(null);
     try {
       const olderMessagesQuery = query(
-        collection(firestore, 'chats', chatId, 'messages'),
+        collection(firestore, 'chats', resolvedChatId, 'messages'),
         orderBy('createdAt', 'desc'),
         startAfter(cursor),
         limit(MESSAGE_PAGE_SIZE),
       );
       const snapshot = await getDocs(olderMessagesQuery);
-      const olderMessages = snapshot.docs.map(mapMessage);
-      snapshot.docs.forEach((messageDocument, index) => {
-        const message = olderMessages[index];
-        if (message) loadedMessageIdsRef.current.set(String(message._id), message);
+      snapshot.docs.forEach((messageDocument) => {
+        const message = mapMessage(messageDocument);
+        if (message) loadedMessageIdsRef.current.set(messageDocument.id, message);
       });
 
       oldestMessageRef.current = snapshot.docs.at(-1) ?? cursor;
       hasMoreMessagesRef.current = snapshot.docs.length === MESSAGE_PAGE_SIZE;
       setHasEarlierMessages(hasMoreMessagesRef.current);
-      setMessages([...loadedMessageIdsRef.current.values()].sort((first, second) =>
-        new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime(),
-      ));
+      setMessages(sortMessages(loadedMessageIdsRef.current.values()));
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -276,7 +369,7 @@ export default function ChatScreen(): React.JSX.Element {
       isLoadingEarlierRef.current = false;
       setIsLoadingEarlier(false);
     }
-  }, [chatId]);
+  }, []);
 
   async function sendMessages(newMessages: IMessage[]): Promise<void> {
     const firestore = db;
@@ -284,16 +377,21 @@ export default function ChatScreen(): React.JSX.Element {
     const message = newMessages[0];
 
     if (!message || !message.text.trim()) return;
-    if (!firestore || !user || (!chatId && !recipientUid)) {
+    const text = message.text.trim();
+    const resolvedChatId = resolvedChatIdRef.current;
+    if (!firestore || !user || (!resolvedChatId && !recipientUid)) {
       setError('Não foi possível enviar a mensagem. Verifique sua conexão e tente novamente.');
       return;
     }
+    if (!resolvedChatId && isCreatingChatRef.current) return;
 
+    // Limpa o campo na hora; se o envio falhar, o rascunho é devolvido.
+    setText('');
     setError(null);
+    let optimisticMessageId: string | null = null;
     try {
-      const text = message.text.trim();
-      if (chatId) {
-        const chatRef = doc(firestore, 'chats', chatId);
+      if (resolvedChatId) {
+        const chatRef = doc(firestore, 'chats', resolvedChatId);
         const messageRef = doc(collection(chatRef, 'messages'));
         const batch = writeBatch(firestore);
         const timestamp = serverTimestamp();
@@ -326,6 +424,14 @@ export default function ChatScreen(): React.JSX.Element {
         const chatRef = doc(firestore, 'chats', directChatId);
         const messageRef = doc(collection(chatRef, 'messages'));
         const timestamp = serverTimestamp();
+
+        // O chat ainda não existe, então não há listener: mostramos a mensagem até a navegação.
+        isCreatingChatRef.current = true;
+        optimisticMessageId = messageRef.id;
+        setMessages((current) => [
+          { _id: messageRef.id, text, createdAt: new Date(), user: { _id: user.uid }, pending: true },
+          ...current,
+        ]);
 
         await runTransaction(firestore, async (transaction) => {
           const chatSnapshot = await transaction.get(chatRef);
@@ -369,11 +475,17 @@ export default function ChatScreen(): React.JSX.Element {
 
         router.replace({
           pathname: '/chat',
-          params: { chatId: directChatId, title: title ?? 'Chat' },
+          params: { chatId: directChatId, title: headerTitle },
         });
       }
     } catch (sendError) {
+      if (optimisticMessageId) {
+        setMessages((current) => current.filter((item) => item._id !== optimisticMessageId));
+      }
+      setText((current) => current || text);
       setError(sendError instanceof Error ? sendError.message : 'Não foi possível enviar a mensagem.');
+    } finally {
+      isCreatingChatRef.current = false;
     }
   }
 
@@ -388,9 +500,18 @@ export default function ChatScreen(): React.JSX.Element {
         >
           <Ionicons name="arrow-back" size={21} color={colors.text} />
         </Pressable>
-        <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
-          {title || 'Chat'}
-        </Text>
+        <View style={styles.heading}>
+          <View style={styles.avatar}>
+            {otherPhoto ? (
+              <Image source={{ uri: otherPhoto }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarInitials}>{getInitials(headerTitle)}</Text>
+            )}
+          </View>
+          <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
+            {headerTitle}
+          </Text>
+        </View>
         <View style={styles.backButton} />
       </View>
 
@@ -431,9 +552,11 @@ export default function ChatScreen(): React.JSX.Element {
             onPress: () => void loadEarlierMessages(),
           }}
           user={currentUser}
+          text={text}
           colorScheme="light"
           isTyping={false}
           textInputProps={{
+            onChangeText: setText,
             placeholder: 'Escreva uma mensagem...',
             placeholderTextColor: colors.secondary,
             style: styles.composer,
@@ -461,21 +584,39 @@ export default function ChatScreen(): React.JSX.Element {
           renderInputToolbar={(props) => (
             <InputToolbar
               {...props}
-              containerStyle={styles.inputToolbar}
+              containerStyle={[
+                styles.inputToolbar,
+                // Com o teclado fechado, afasta o campo do indicador de início do iPhone.
+                { paddingBottom: 8 + (keyboardVisible ? 0 : insets.bottom) },
+              ]}
               primaryStyle={styles.inputToolbarPrimary}
             />
           )}
-          renderSend={(props) => (
-            <Send
-              {...props}
-              containerStyle={styles.sendContainer}
-              sendButtonProps={{ accessibilityLabel: 'Enviar mensagem' }}
-            >
-              <View style={styles.sendButton}>
-                <Ionicons name="send" size={17} color={colors.white} />
-              </View>
-            </Send>
-          )}
+          renderSend={(props) => {
+            // O botão fica sempre visível, mas acinzentado e inativo enquanto não há texto.
+            const canSend = !!props.text?.trim();
+            return (
+              <Send
+                {...props}
+                isSendButtonAlwaysVisible
+                containerStyle={styles.sendContainer}
+                sendButtonProps={{
+                  accessibilityLabel: 'Enviar mensagem',
+                  accessibilityState: { disabled: !canSend },
+                  // Sem texto o toque já não envia nada; só evitamos o efeito visual de clique.
+                  activeOpacity: canSend ? 0.2 : 1,
+                }}
+              >
+                <View style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}>
+                  <Ionicons
+                    name="send"
+                    size={17}
+                    color={canSend ? colors.white : colors.disabledText}
+                  />
+                </View>
+              </Send>
+            );
+          }}
           isAvatarOnTop
           timeTextStyle={{
             left: { color: colors.secondary, fontFamily: 'Inter_400Regular', fontSize: 10 },
@@ -509,13 +650,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 20,
   },
-  title: {
+  heading: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  avatar: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderRadius: 17,
+    backgroundColor: colors.avatarBg,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarInitials: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 13,
+    color: colors.avatarText,
+  },
+  title: {
+    flexShrink: 1,
     fontFamily: 'Inter_600SemiBold',
     fontSize: 16,
     lineHeight: 22,
     color: colors.text,
-    textAlign: 'center',
   },
   messages: {
     backgroundColor: colors.background,
@@ -589,6 +754,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 21,
     backgroundColor: colors.accent,
+  },
+  sendButtonDisabled: {
+    backgroundColor: colors.disabled,
   },
   loadingState: {
     flex: 1,
