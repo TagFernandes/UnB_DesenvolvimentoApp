@@ -50,8 +50,10 @@ function RootNavigator() {
       {/* Logado: telas do app */}
       <Stack.Protected guard={!!user && !isSigningUp}>
         <Stack.Screen name="index" options={{ animation: 'none' }} />
+        <Stack.Screen name="buscar" options={{ animation: 'none' }} />
         <Stack.Screen name="forum" options={{ animation: 'none' }} />
         <Stack.Screen name="perfil" options={{ animation: 'none' }} />
+        <Stack.Screen name="regiao" />
         <Stack.Screen name="chats" />
         <Stack.Screen name="chat" />
         <Stack.Screen name="conversas" />

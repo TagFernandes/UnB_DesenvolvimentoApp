@@ -226,7 +226,7 @@ export default function ForumScreen(): React.JSX.Element {
       item={item}
       onPress={() =>
         router.push({
-          pathname: '/conversas',
+          pathname: '/regiao',
           params: { regionId: item.id, regionName: item.region },
         })
       }

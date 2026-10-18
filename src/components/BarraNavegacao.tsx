@@ -90,7 +90,7 @@ const abas: {
   rota?: Href;
 }[] = [
   { aba: 'inicio', label: 'Início', Icon: HomeIcon, rota: '/' },
-  { aba: 'buscar', label: 'Buscar', Icon: BuscarIcon },
+  { aba: 'buscar', label: 'Buscar', Icon: BuscarIcon, rota: '/buscar' },
   { aba: 'mensagens', label: 'Mensagens', Icon: MensagensIcon, rota: '/forum' },
   { aba: 'perfil', label: 'Perfil', Icon: PerfilIcon, rota: '/perfil' },
 ];

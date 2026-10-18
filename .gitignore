@@ -40,3 +40,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# chave da service account usada pelo scripts/seed_regioes.py
+serviceAccount*.json
+*-firebase-adminsdk-*.json
+
+# ambiente virtual do scripts/seed_regioes.py
+.venv/
