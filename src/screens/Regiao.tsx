@@ -238,11 +238,7 @@ export default function RegiaoScreen() {
             </Secao>
 
             <Secao titulo="Localização" style={styles.secaoLocalizacao}>
-              <CardLocalizacao
-                nome={perfil.name}
-                imagemUrl={perfil.mapImageUrl}
-                atribuicao={perfil.mapAttribution}
-              />
+              <CardLocalizacao nome={perfil.name} lat={perfil.lat} lng={perfil.lng} />
             </Secao>
           </>
         ) : (

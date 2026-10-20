@@ -1,45 +1,85 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import MapView from 'react-native-maps';
 
+import MapaTelaCheia from './MapaTelaCheia';
 import { colors, fonts } from './tokens';
 
 type Props = {
   nome: string;
-  imagemUrl: string | null;
-  atribuicao: string | null;
+  lat: number | null;
+  lng: number | null;
 };
 
+/** Zoom do card: o suficiente para mostrar a RA e o entorno. */
+const DELTA_CARD = 0.06;
+
 /**
- * Imagem provisória do mapa com o pin e o nome da RA. Será trocada por um
- * mapa interativo usando lat/lng do perfil.
+ * Prévia do mapa com o pin e o nome da RA. O mapa do card fica parado para não
+ * brigar com o scroll da tela; tocar nele abre o mapa interativo em tela cheia.
  */
-export default function CardLocalizacao({ nome, imagemUrl, atribuicao }: Props) {
-  const [falhou, setFalhou] = useState(false);
-  const mostrarImagem = !!imagemUrl && !falhou;
+export default function CardLocalizacao({ nome, lat, lng }: Props) {
+  const [expandido, setExpandido] = useState(false);
+  const temCoordenadas = lat !== null && lng !== null;
 
   return (
-    <View style={styles.card} accessible accessibilityLabel={`Mapa de ${nome}`}>
-      {mostrarImagem && (
-        <Image
-          source={{ uri: imagemUrl }}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-          onError={() => setFalhou(true)}
+    <>
+      <Pressable
+        style={styles.card}
+        onPress={() => setExpandido(true)}
+        disabled={!temCoordenadas}
+        accessibilityRole={temCoordenadas ? 'button' : undefined}
+        accessibilityLabel={`Mapa de ${nome}`}
+        accessibilityHint={temCoordenadas ? 'Abre o mapa em tela cheia' : undefined}
+      >
+        {temCoordenadas && (
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            <MapView
+              style={StyleSheet.absoluteFill}
+              initialRegion={{
+                latitude: lat,
+                longitude: lng,
+                latitudeDelta: DELTA_CARD,
+                longitudeDelta: DELTA_CARD,
+              }}
+              userInterfaceStyle="light"
+              liteMode
+              scrollEnabled={false}
+              zoomEnabled={false}
+              rotateEnabled={false}
+              pitchEnabled={false}
+              toolbarEnabled={false}
+            />
+          </View>
+        )}
+
+        <View style={styles.centro} pointerEvents="none">
+          <View style={styles.pin}>
+            <Ionicons name="location-sharp" size={15} color={colors.white} />
+          </View>
+          <View style={styles.etiqueta}>
+            <Text style={styles.nome}>{nome}</Text>
+          </View>
+        </View>
+
+        {temCoordenadas && (
+          <View style={styles.expandir} pointerEvents="none">
+            <Ionicons name="expand" size={16} color={colors.title} />
+          </View>
+        )}
+      </Pressable>
+
+      {temCoordenadas && (
+        <MapaTelaCheia
+          visivel={expandido}
+          nome={nome}
+          lat={lat}
+          lng={lng}
+          onFechar={() => setExpandido(false)}
         />
       )}
-
-      <View style={styles.centro} pointerEvents="none">
-        <View style={styles.pin}>
-          <Ionicons name="location-sharp" size={15} color={colors.white} />
-        </View>
-        <View style={styles.etiqueta}>
-          <Text style={styles.nome}>{nome}</Text>
-        </View>
-      </View>
-
-      {mostrarImagem && !!atribuicao && <Text style={styles.atribuicao}>{atribuicao}</Text>}
-    </View>
+    </>
   );
 }
 
@@ -81,12 +121,16 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: colors.title,
   },
-  atribuicao: {
+  expandir: {
     position: 'absolute',
+    top: 10,
     right: 10,
-    bottom: 4,
-    fontFamily: fonts.regular,
-    fontSize: 8,
-    color: colors.secondary,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.1)',
   },
 });
