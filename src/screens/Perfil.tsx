@@ -151,6 +151,12 @@ const rowIcons = {
       <Path d="M12 17h.01" />
     </Icon>
   ),
+  sobre: (color: string) => (
+    <Icon size={16} color={color}>
+      <Circle cx={12} cy={12} r={10} />
+      <Path d="M12 11v6M12 7h.01" />
+    </Icon>
+  ),
   sair: (color: string) => (
     <Icon size={15} color={color}>
       <Path d="m16 17 5-5-5-5" />
@@ -581,6 +587,7 @@ export default function Perfil() {
                 { label: 'Configurações', icon: 'configuracoes' },
                 { label: 'Privacidade', icon: 'privacidade' },
                 { label: 'Ajuda e suporte', icon: 'ajuda' },
+                { label: 'Sobre o mapeei', icon: 'sobre', onPress: () => router.push('/sobre') },
                 { label: 'Sair', icon: 'sair', perigo: true, onPress: confirmarSaida },
               ]}
             />

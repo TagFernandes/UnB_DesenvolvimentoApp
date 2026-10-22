@@ -4,6 +4,8 @@ export const colors = {
   pink: '#E96E97',
   olive: '#8B9A3F',
   text: '#1A1A1A',
+  textSecondary: '#686868',
+  surfaceTint: '#F3E8ED',
   black: '#000000',
   border: '#D9D9D9',
   muted: '#D9D9D9',
