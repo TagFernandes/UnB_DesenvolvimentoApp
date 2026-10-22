@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text } from 'react-native';
 
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
@@ -15,6 +15,8 @@ export default function SocialButton({
     <Pressable
       style={({ pressed }) => [styles.button, pressed && styles.pressed]}
       accessibilityRole="button"
+      // Login social ainda não está ligado ao Firebase; avisa em vez de não fazer nada.
+      onPress={() => Alert.alert('Em breve', 'Por enquanto, use e-mail e senha.')}
     >
       {icon}
       <Text style={styles.text}>{label}</Text>

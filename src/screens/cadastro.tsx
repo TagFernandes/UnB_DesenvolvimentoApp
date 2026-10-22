@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -191,6 +192,8 @@ function SocialButton({ icon, label }: { icon: React.ReactNode; label: string })
     <Pressable
       style={({ pressed }) => [styles.socialButton, pressed && styles.pressed]}
       accessibilityRole="button"
+      // Login social ainda não está ligado ao Firebase; avisa em vez de não fazer nada.
+      onPress={() => Alert.alert('Em breve', 'Por enquanto, crie sua conta com e-mail e senha.')}
     >
       {icon}
       <Text style={styles.socialButtonText}>{label}</Text>

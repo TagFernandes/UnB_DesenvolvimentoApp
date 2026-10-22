@@ -164,6 +164,17 @@ export async function listarPerfisRegioes(): Promise<PerfilRegiao[]> {
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }
 
+/** Remove acentos e caixa para "guara" encontrar "Guará". */
+export function normalizar(texto: string): string {
+  return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
+}
+
+/** Ids das regiões favoritadas pelo usuário. */
+export async function listarFavoritos(uid: string): Promise<string[]> {
+  const snapshot = await getDocs(collection(exigirDb(), 'users', uid, 'favorite_regions'));
+  return snapshot.docs.map((documento) => documento.id);
+}
+
 export function iniciais(nome: string): string {
   return nome
     .split(/\s+/)

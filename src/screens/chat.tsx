@@ -1,4 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
+// O GiftedChat formata datas com o dayjs, que só traduz se o locale for carregado.
+import 'dayjs/locale/pt-br';
 import { Bubble, GiftedChat, InputToolbar, Send, type IMessage } from 'react-native-gifted-chat';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -561,7 +563,10 @@ export default function ChatScreen(): React.JSX.Element {
             placeholderTextColor: colors.secondary,
             style: styles.composer,
           }}
-          locale="pt-BR"
+          locale="pt-br"
+          dateFormat="D [de] MMMM"
+          // Sem isto o separador de hoje aparece como "Today".
+          dateFormatCalendar={{ sameDay: '[Hoje]' }}
           messagesContainerStyle={styles.messages}
           keyboardAvoidingViewProps={{ keyboardVerticalOffset: insets.top + 60 }}
           renderBubble={(props) => (

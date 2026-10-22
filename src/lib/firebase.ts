@@ -1,12 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
+  connectAuthEmulator,
   getAuth,
   getReactNativePersistence,
   initializeAuth,
   type Auth,
 } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
+import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore';
 
 import { firebaseConfig, firebaseConfigurado } from './firebaseConfig';
 
@@ -33,3 +34,15 @@ function criarAuth(): Auth | null {
 
 export const auth = criarAuth();
 export const db: Firestore | null = app ? getFirestore(app) : null;
+
+// Para testar contra os emuladores locais do Firebase (auth na 9099, Firestore na
+// 8080), inicie o Metro com EXPO_PUBLIC_FIREBASE_EMULATOR_HOST=127.0.0.1.
+const emulador = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST;
+if (emulador && auth && db) {
+  try {
+    connectAuthEmulator(auth, `http://${emulador}:9099`, { disableWarnings: true });
+    connectFirestoreEmulator(db, emulador, 8080);
+  } catch {
+    // Já conectado (ex.: recarregamento rápido do Metro).
+  }
+}

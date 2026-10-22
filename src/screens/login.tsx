@@ -77,15 +77,15 @@ export default function LoginScreen() {
 
           <Field
             label="Senha"
-            placeholder="Digite uma senha"
+            placeholder="Digite sua senha"
             value={senha}
             onChangeText={setSenha}
             editable={!carregando}
             inputStyle={styles.inputPoppins}
             secureTextEntry
             autoCapitalize="none"
-            autoComplete="new-password"
-            textContentType="newPassword"
+            autoComplete="current-password"
+            textContentType="password"
             returnKeyType="done"
             onSubmitEditing={handleLogin}
           />
@@ -111,7 +111,7 @@ export default function LoginScreen() {
               {carregando ? (
                 <ActivityIndicator color={colors.white} />
               ) : (
-                <Text style={styles.primaryButtonText}>Inscreva-se</Text>
+                <Text style={styles.primaryButtonText}>Entrar</Text>
               )}
             </Pressable>
           </View>
@@ -124,8 +124,8 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.socialButtons}>
-            <SocialButton icon={<AppleIcon />} label="Inscreva-se com Apple" />
-            <SocialButton icon={<GoogleIcon />} label="Inscreva-se com Google" />
+            <SocialButton icon={<AppleIcon />} label="Entrar com Apple" />
+            <SocialButton icon={<GoogleIcon />} label="Entrar com Google" />
           </View>
 
           <View style={styles.loginRow}>

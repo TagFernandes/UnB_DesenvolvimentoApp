@@ -1,7 +1,7 @@
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import type { User } from 'firebase/auth';
-import { deleteDoc, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 
 import { db } from './firebase';
@@ -82,10 +82,8 @@ export async function enviarFotoPerfil(usuario: User, uri: string): Promise<stri
     throw new Error('A foto ficou grande demais. Tente outra imagem.');
   }
 
-  await setDoc(doc(db, COLECAO_FOTOS, usuario.uid), {
-    foto,
-    atualizadoEm: serverTimestamp(),
-  });
+  // As regras do Firestore só aceitam o campo `foto` neste documento.
+  await setDoc(doc(db, COLECAO_FOTOS, usuario.uid), { foto });
 
   cacheFotos.set(usuario.uid, Promise.resolve(foto));
   return foto;

@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import BarraNavegacao from '../components/BarraNavegacao';
 import { colors, fonts } from '../components/Regiao/tokens';
-import { listarPerfisRegioes, type PerfilRegiao } from '../lib/regioes';
+import { listarPerfisRegioes, normalizar, type PerfilRegiao } from '../lib/regioes';
 
 const tokens = {
   background: '#FAFBF8',
@@ -26,11 +26,6 @@ const tokens = {
 
 /** A barra de navegação fica a 26 do rodapé e tem 50 de altura. */
 const ESPACO_BARRA = 26 + 50 + 24;
-
-/** Remove acentos para "guara" encontrar "Guará". */
-function normalizar(texto: string) {
-  return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLocaleLowerCase('pt-BR');
-}
 
 function CardRegiao({ regiao, onPress }: { regiao: PerfilRegiao; onPress: () => void }) {
   const foto = regiao.photos[0];

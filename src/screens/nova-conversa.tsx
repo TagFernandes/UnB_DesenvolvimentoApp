@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, doc, getDoc, increment, runTransaction, serverTimestamp } from 'firebase/firestore';
-import { useEffect, useMemo, useState } from 'react';
+import { collection, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +16,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { auth, db } from '../lib/firebase';
+import { mensagemDeErro } from '../lib/forum';
+import { listarPerfisRegioes } from '../lib/regioes';
 
 const colors = {
   background: '#FDF4F6',
@@ -37,24 +41,12 @@ type CategoryCode = (typeof categories)[number]['code'];
 
 type Region = { id: string; name: string };
 
-const regions: Region[] = [
-  { id: 'asa-norte', name: 'Asa Norte' },
-  { id: 'asa-sul', name: 'Asa Sul' },
-  { id: 'taguatinga', name: 'Taguatinga' },
-  { id: 'guara', name: 'Guará' },
-  { id: 'nucleo-bandeirante', name: 'Núcleo Bandeirante' },
-];
-
 export default function NovaConversaScreen(): React.JSX.Element {
   const router = useRouter();
   const { regionId: initialRegionId, regionName: initialRegionName } =
     useLocalSearchParams<{ regionId?: string; regionName?: string }>();
-  // Se o usuário veio de dentro de uma RA, ela é a única opção de região.
-  const regionOptions = useMemo<Region[]>(() => {
-    if (!initialRegionId) return regions;
-    const region = regions.find((item) => item.id === initialRegionId);
-    return [region ?? { id: initialRegionId, name: initialRegionName ?? initialRegionId }];
-  }, [initialRegionId, initialRegionName]);
+  const [regionOptions, setRegionOptions] = useState<Region[]>([]);
+  const [loadingRegions, setLoadingRegions] = useState(!initialRegionId);
   const [selectedRegion, setSelectedRegion] = useState<Region | null>(null);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -62,9 +54,30 @@ export default function NovaConversaScreen(): React.JSX.Element {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Se o usuário veio de dentro de uma RA, ela é a única opção; senão, lista as RAs cadastradas.
   useEffect(() => {
-    setSelectedRegion(regionOptions.find((region) => region.id === initialRegionId) ?? null);
-  }, [initialRegionId, regionOptions]);
+    if (initialRegionId) {
+      const region = { id: initialRegionId, name: initialRegionName ?? initialRegionId };
+      setRegionOptions([region]);
+      setSelectedRegion(region);
+      return;
+    }
+    let active = true;
+    setLoadingRegions(true);
+    listarPerfisRegioes()
+      .then((perfis) => {
+        if (active) setRegionOptions(perfis.map(({ id, name }) => ({ id, name })));
+      })
+      .catch((loadError) => {
+        if (active) setError(mensagemDeErro(loadError, 'Não foi possível carregar as regiões.'));
+      })
+      .finally(() => {
+        if (active) setLoadingRegions(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [initialRegionId, initialRegionName]);
 
   async function createConversation(): Promise<void> {
     const cleanTitle = title.trim();
@@ -88,52 +101,32 @@ export default function NovaConversaScreen(): React.JSX.Element {
         ? profileName.trim()
         : '-';
 
-      const regionRef = doc(db, 'regions', selectedRegion.id);
-      const conversationRef = doc(collection(db, 'conversations'));
+      // Só a conversa é gravada: as regras não deixam o app atualizar regions/{id}, e o
+      // Fórum calcula os contadores a partir das conversas.
+      await setDoc(doc(collection(db, 'conversations')), {
+        region_id: selectedRegion.id,
+        category,
+        title: cleanTitle,
+        body: cleanBody,
+        author_name: authorName,
+        author_uid: currentUser.uid,
+        like_count: 0,
+        reply_count: 0,
+        created_at: serverTimestamp(),
+      });
 
-      await runTransaction(db, async (transaction) => {
-        const regionSnapshot = await transaction.get(regionRef);
-        const currentRegion = regionSnapshot.data();
-        transaction.set(conversationRef, {
-          region_id: selectedRegion.id,
-          category,
-          title: cleanTitle,
-          body: cleanBody,
-          author_name: authorName,
-          author_uid: currentUser.uid,
-          like_count: 0,
-          reply_count: 0,
-          created_at: serverTimestamp(),
+      // Vindo da lista de conversas da RA, volta para ela (que recarrega ao ganhar foco)
+      // em vez de empilhar uma segunda lista igual.
+      if (initialRegionId && router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace({
+          pathname: '/conversas',
+          params: { regionId: selectedRegion.id, regionName: selectedRegion.name },
         });
-
-        const regionData = {
-          name: selectedRegion.name,
-          conversation_count: increment(1),
-          last_activity_at: serverTimestamp(),
-          last_conversation_id: conversationRef.id,
-          last_conversation_title: cleanTitle,
-          last_conversation_like_count: 0,
-          last_conversation_reply_count: 0,
-        };
-
-        if (regionSnapshot.exists()) {
-          transaction.update(regionRef, {
-            ...regionData,
-            ...(!currentRegion?.created_at ? { created_at: serverTimestamp() } : {}),
-          });
-        } else {
-          transaction.set(regionRef, {
-            ...regionData,
-            created_at: serverTimestamp(),
-          });
-        }
-      });
-      router.replace({
-        pathname: '/conversas',
-        params: { regionId: selectedRegion.id, regionName: selectedRegion.name },
-      });
+      }
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Não foi possível publicar a conversa.');
+      setError(mensagemDeErro(saveError, 'Não foi possível publicar a conversa.'));
       setSaving(false);
     }
   }
@@ -153,88 +146,95 @@ export default function NovaConversaScreen(): React.JSX.Element {
         <View style={styles.backButton} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.label}>Região</Text>
-        <View style={styles.regionList}>
-          {regionOptions.map((region) => {
-            const selected = selectedRegion?.id === region.id;
-            return (
-              <Pressable
-                key={region.id}
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                style={[styles.regionOption, selected && styles.optionSelected]}
-                onPress={() => setSelectedRegion(region)}
-              >
-                <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
-                  {region.name}
-                </Text>
-                {selected ? <Ionicons name="checkmark-circle" size={20} color={colors.accent} /> : null}
-              </Pressable>
-            );
-          })}
-        </View>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Text style={styles.label}>Região</Text>
+          {loadingRegions ? <ActivityIndicator color={colors.accent} /> : null}
+          <View style={styles.regionList}>
+            {regionOptions.map((region) => {
+              const selected = selectedRegion?.id === region.id;
+              return (
+                <Pressable
+                  key={region.id}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  style={[styles.regionOption, selected && styles.optionSelected]}
+                  onPress={() => setSelectedRegion(region)}
+                >
+                  <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
+                    {region.name}
+                  </Text>
+                  {selected ? <Ionicons name="checkmark-circle" size={20} color={colors.accent} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
 
-        <Text style={styles.label}>Título</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Sobre o que você quer conversar?"
-          placeholderTextColor={colors.secondary}
-          value={title}
-          onChangeText={setTitle}
-          maxLength={100}
-          accessibilityLabel="Título da conversa"
-        />
+          <Text style={styles.label}>Título</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Sobre o que você quer conversar?"
+            placeholderTextColor={colors.secondary}
+            value={title}
+            onChangeText={setTitle}
+            maxLength={100}
+            accessibilityLabel="Título da conversa"
+          />
 
-        <Text style={styles.label}>Categoria</Text>
-        <View style={styles.categories}>
-          {categories.map((item) => {
-            const selected = category === item.code;
-            return (
-              <Pressable
-                key={item.code}
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                style={[styles.categoryOption, selected && styles.optionSelected]}
-                onPress={() => setCategory(item.code)}
-              >
-                <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{item.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+          <Text style={styles.label}>Categoria</Text>
+          <View style={styles.categories}>
+            {categories.map((item) => {
+              const selected = category === item.code;
+              return (
+                <Pressable
+                  key={item.code}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  style={[styles.categoryOption, selected && styles.optionSelected]}
+                  onPress={() => setCategory(item.code)}
+                >
+                  <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
-        <Text style={styles.label}>Texto</Text>
-        <TextInput
-          style={[styles.input, styles.bodyInput]}
-          placeholder="Escreva sua mensagem..."
-          placeholderTextColor={colors.secondary}
-          value={body}
-          onChangeText={setBody}
-          multiline
-          textAlignVertical="top"
-          accessibilityLabel="Texto da conversa"
-        />
+          <Text style={styles.label}>Texto</Text>
+          <TextInput
+            style={[styles.input, styles.bodyInput]}
+            placeholder="Escreva sua mensagem..."
+            placeholderTextColor={colors.secondary}
+            value={body}
+            onChangeText={setBody}
+            multiline
+            textAlignVertical="top"
+            accessibilityLabel="Texto da conversa"
+          />
 
-        {error ? <Text style={styles.error} accessibilityLiveRegion="polite">{error}</Text> : null}
+          {error ? <Text style={styles.error} accessibilityLiveRegion="polite">{error}</Text> : null}
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Publicar conversa"
-          accessibilityState={{ disabled: saving, busy: saving }}
-          style={[styles.submitButton, saving && styles.submitDisabled]}
-          onPress={createConversation}
-          disabled={saving}
-        >
-          {saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.submitText}>Publicar conversa</Text>}
-        </Pressable>
-      </ScrollView>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Publicar conversa"
+            accessibilityState={{ disabled: saving, busy: saving }}
+            style={[styles.submitButton, saving && styles.submitDisabled]}
+            onPress={createConversation}
+            disabled={saving}
+          >
+            {saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.submitText}>Publicar conversa</Text>}
+          </Pressable>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  flex: { flex: 1 },
   topBar: {
     minHeight: 56,
     flexDirection: 'row',

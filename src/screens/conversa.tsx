@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   collection,
-  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -11,7 +10,6 @@ import {
   runTransaction,
   serverTimestamp,
   Timestamp,
-  where,
   writeBatch,
   type DocumentReference,
 } from 'firebase/firestore';
@@ -33,6 +31,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { auth, db } from '../lib/firebase';
+import { alternarCurtida, mensagemDeErro } from '../lib/forum';
 import { useFotoPerfil } from '../lib/fotoPerfil';
 
 const colors = {
@@ -52,7 +51,7 @@ const colors = {
 
 /** Limite de caracteres de um comentário. */
 const MAX_COMMENT_LENGTH = 500;
-/** Um batch do Firestore aceita até 500 operações; sobra margem para a conversa e a região. */
+/** Um batch do Firestore aceita até 500 operações; sobra margem para a conversa. */
 const BATCH_LIMIT = 450;
 
 type ConversationData = {
@@ -73,11 +72,6 @@ type CommentData = {
   created_at?: Timestamp;
 };
 
-type RegionData = {
-  last_activity_at?: Timestamp;
-  last_conversation_id?: string;
-};
-
 type Conversation = {
   authorUid: string;
   title: string;
@@ -85,6 +79,7 @@ type Conversation = {
   author: string;
   time: string;
   likes: number;
+  liked: boolean;
   comments: number;
 };
 
@@ -156,6 +151,7 @@ export default function ConversaScreen(): React.JSX.Element {
   const [sending, setSending] = useState(false);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
   const [deletingPost, setDeletingPost] = useState(false);
+  const [liking, setLiking] = useState(false);
   const currentUid = auth?.currentUser?.uid;
 
   useEffect(() => {
@@ -169,9 +165,11 @@ export default function ConversaScreen(): React.JSX.Element {
         if (!conversationId) throw new Error('Não foi informada uma conversa.');
 
         const conversationRef = doc(db, 'conversations', conversationId);
-        const [conversationSnapshot, commentsSnapshot] = await Promise.all([
+        const userId = auth?.currentUser?.uid;
+        const [conversationSnapshot, commentsSnapshot, likeSnapshot] = await Promise.all([
           getDoc(conversationRef),
           getDocs(query(collection(conversationRef, 'comments'), orderBy('created_at', 'asc'))),
+          userId ? getDoc(doc(conversationRef, 'likes', userId)) : null,
         ]);
         if (!conversationSnapshot.exists()) throw new Error('Conversa não encontrada.');
 
@@ -184,11 +182,12 @@ export default function ConversaScreen(): React.JSX.Element {
           author: data.author_name?.trim() || 'Autor desconhecido',
           time: formatTime(data.created_at?.toDate()),
           likes: data.like_count ?? 0,
+          liked: likeSnapshot?.exists() ?? false,
           comments: data.reply_count ?? 0,
         });
         setComments(commentsSnapshot.docs.map((item) => mapComment(item.id, item.data() as CommentData)));
       } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Erro ao carregar a conversa.');
+        if (active) setError(mensagemDeErro(loadError, 'Erro ao carregar a conversa.'));
       } finally {
         if (active) setLoading(false);
       }
@@ -226,10 +225,6 @@ export default function ConversaScreen(): React.JSX.Element {
         const conversationSnapshot = await transaction.get(conversationRef);
         if (!conversationSnapshot.exists()) throw new Error('Conversa não encontrada.');
         const data = conversationSnapshot.data() as ConversationData;
-
-        const regionRef = data.region_id ? doc(firestore, 'regions', data.region_id) : null;
-        const regionSnapshot = regionRef ? await transaction.get(regionRef) : null;
-
         const nextReplyCount = (data.reply_count ?? 0) + 1;
         transaction.set(commentRef, {
           body: cleanText,
@@ -242,21 +237,6 @@ export default function ConversaScreen(): React.JSX.Element {
           reply_count: nextReplyCount,
           last_comment_change_id: commentRef.id,
         });
-
-        // O card da região no Fórum mostra os números da conversa mais recente.
-        if (regionRef && regionSnapshot?.exists()) {
-          const region = regionSnapshot.data() as RegionData;
-          const isLatestConversation = region.last_conversation_id === conversationId || (
-            !region.last_conversation_id &&
-            region.last_activity_at !== undefined &&
-            data.created_at !== undefined &&
-            region.last_activity_at.isEqual(data.created_at)
-          );
-          if (isLatestConversation) {
-            transaction.update(regionRef, { last_conversation_reply_count: nextReplyCount });
-          }
-        }
-
         return nextReplyCount;
       });
 
@@ -267,9 +247,27 @@ export default function ConversaScreen(): React.JSX.Element {
       setConversation((current) => (current ? { ...current, comments: replyCount } : current));
       setText('');
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'Não foi possível enviar o comentário.');
+      setError(mensagemDeErro(sendError, 'Não foi possível enviar o comentário.'));
     } finally {
       setSending(false);
+    }
+  }
+
+  async function toggleLike(): Promise<void> {
+    if (!conversationId || liking) return;
+    if (!currentUid) {
+      Alert.alert('Entre na sua conta', 'É necessário entrar para curtir uma conversa.');
+      return;
+    }
+
+    setLiking(true);
+    try {
+      const result = await alternarCurtida(conversationId, currentUid);
+      setConversation((current) => (current ? { ...current, ...result } : current));
+    } catch (likeError) {
+      Alert.alert('Não foi possível atualizar a curtida', mensagemDeErro(likeError, 'Tente novamente.'));
+    } finally {
+      setLiking(false);
     }
   }
 
@@ -300,36 +298,19 @@ export default function ConversaScreen(): React.JSX.Element {
           throw new Error('Você só pode excluir os seus comentários.');
         }
 
-        const regionRef = data.region_id ? doc(firestore, 'regions', data.region_id) : null;
-        const regionSnapshot = regionRef ? await transaction.get(regionRef) : null;
-
         const nextReplyCount = Math.max(0, (data.reply_count ?? 0) - 1);
         transaction.delete(commentRef);
         transaction.update(conversationRef, {
           reply_count: nextReplyCount,
           last_comment_change_id: comment.id,
         });
-
-        if (regionRef && regionSnapshot?.exists()) {
-          const region = regionSnapshot.data() as RegionData;
-          const isLatestConversation = region.last_conversation_id === conversationId || (
-            !region.last_conversation_id &&
-            region.last_activity_at !== undefined &&
-            data.created_at !== undefined &&
-            region.last_activity_at.isEqual(data.created_at)
-          );
-          if (isLatestConversation) {
-            transaction.update(regionRef, { last_conversation_reply_count: nextReplyCount });
-          }
-        }
-
         return nextReplyCount;
       });
 
       setComments((current) => current.filter((item) => item.id !== comment.id));
       setConversation((current) => (current ? { ...current, comments: replyCount } : current));
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Não foi possível excluir o comentário.');
+      setError(mensagemDeErro(deleteError, 'Não foi possível excluir o comentário.'));
     } finally {
       setDeletingIds((current) => current.filter((id) => id !== comment.id));
     }
@@ -356,12 +337,9 @@ export default function ConversaScreen(): React.JSX.Element {
       if (data.author_uid !== currentUser.uid) throw new Error('Você só pode excluir as suas conversas.');
 
       // O Firestore não apaga subcoleções junto com o documento: curtidas e comentários saem antes.
-      const [likesSnapshot, commentsSnapshot, regionSnapshot] = await Promise.all([
+      const [likesSnapshot, commentsSnapshot] = await Promise.all([
         getDocs(collection(conversationRef, 'likes')),
         getDocs(collection(conversationRef, 'comments')),
-        data.region_id
-          ? getDocs(query(collection(firestore, 'conversations'), where('region_id', '==', data.region_id)))
-          : null,
       ]);
       const childRefs: DocumentReference[] = [
         ...likesSnapshot.docs.map((item) => item.ref),
@@ -379,37 +357,10 @@ export default function ConversaScreen(): React.JSX.Element {
       childRefs.forEach((ref) => batch.delete(ref));
       batch.delete(conversationRef);
 
-      // O card da região mostra a conversa mais recente; recalcula com as que sobraram.
-      if (data.region_id && regionSnapshot) {
-        const remaining = regionSnapshot.docs
-          .filter((item) => item.id !== conversationId)
-          .map((item) => ({ id: item.id, data: item.data() as ConversationData }))
-          .sort((first, second) =>
-            (second.data.created_at?.toMillis() ?? 0) - (first.data.created_at?.toMillis() ?? 0));
-        const latest = remaining[0];
-        batch.set(doc(firestore, 'regions', data.region_id), latest
-          ? {
-            conversation_count: remaining.length,
-            last_activity_at: latest.data.created_at ?? deleteField(),
-            last_conversation_id: latest.id,
-            last_conversation_title: latest.data.title ?? '',
-            last_conversation_like_count: latest.data.like_count ?? 0,
-            last_conversation_reply_count: latest.data.reply_count ?? 0,
-          }
-          : {
-            conversation_count: 0,
-            last_activity_at: deleteField(),
-            last_conversation_id: deleteField(),
-            last_conversation_title: deleteField(),
-            last_conversation_like_count: deleteField(),
-            last_conversation_reply_count: deleteField(),
-          }, { merge: true });
-      }
-
       await batch.commit();
       goBack();
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Não foi possível excluir a conversa.');
+      setError(mensagemDeErro(deleteError, 'Não foi possível excluir a conversa.'));
       setDeletingPost(false);
     }
   }
@@ -507,10 +458,24 @@ export default function ConversaScreen(): React.JSX.Element {
               <Ionicons name="chatbubble-outline" size={14} color={colors.secondary} />
               <Text style={styles.statText}>{conversation.comments}</Text>
             </View>
-            <View style={styles.stat} accessibilityLabel={`${conversation.likes} curtidas`}>
-              <Ionicons name="heart-outline" size={14} color={colors.secondary} />
-              <Text style={styles.statText}>{conversation.likes}</Text>
-            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={conversation.liked ? 'Remover curtida' : 'Curtir conversa'}
+              accessibilityState={{ selected: conversation.liked, disabled: liking }}
+              disabled={liking}
+              hitSlop={10}
+              style={styles.stat}
+              onPress={() => void toggleLike()}
+            >
+              <Ionicons
+                name={conversation.liked ? 'heart' : 'heart-outline'}
+                size={14}
+                color={conversation.liked ? colors.accent : colors.secondary}
+              />
+              <Text style={[styles.statText, conversation.liked && styles.statTextLiked]}>
+                {conversation.likes}
+              </Text>
+            </Pressable>
           </View>
         </View>
         <Text style={styles.sectionTitle}>Comentários</Text>
@@ -624,6 +589,7 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', marginTop: 12 },
   stat: { flexDirection: 'row', alignItems: 'center', marginRight: 16 },
   statText: { fontSize: 12, color: colors.secondary, marginLeft: 4 },
+  statTextLiked: { color: colors.accent },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: 24, marginBottom: 8 },
   comment: {
     flexDirection: 'row',

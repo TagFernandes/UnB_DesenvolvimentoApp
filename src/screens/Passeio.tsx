@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, {
   Circle,
   Defs,
@@ -265,6 +266,7 @@ function CardGuia() {
 }
 
 export default function Passeio() {
+  const insets = useSafeAreaInsets();
   return (
     <View style={styles.container}>
       <View style={styles.screen}>
@@ -302,7 +304,7 @@ export default function Passeio() {
             </Text>
             <Text style={styles.body}>
               Navegue por dados destrinchados e fáceis de entender, e sinta-se com repertório
-              sobre o contexto local das diferentes regiões do Brasil.
+              sobre o contexto local das diferentes regiões do DF.
             </Text>
           </View>
 
@@ -321,6 +323,9 @@ export default function Passeio() {
           </View>
         </ScrollView>
 
+        {/* Faixa sob a barra de status, para o conteúdo rolado não passar por trás do relógio. */}
+        <View style={[styles.statusBar, { height: insets.top }]} pointerEvents="none" />
+
         <BarraNavegacao ativa="inicio" />
       </View>
     </View>
@@ -330,6 +335,13 @@ export default function Passeio() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.background,
+  },
+  statusBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     backgroundColor: colors.background,
   },
   screen: {

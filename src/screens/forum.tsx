@@ -16,6 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { collection, getDocs, type Timestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { mensagemDeErro } from '../lib/forum';
+import { listarPerfisRegioes, normalizar } from '../lib/regioes';
 
 
 /* ------------------------------------------------------------------ */
@@ -84,15 +86,22 @@ type ForumItem = {
   activity: string;
   comments: number;
   likes: number;
+  lastActivity: number;
 };
 
-type RegionData = {
-  name?: string;
-  conversation_count?: number;
-  last_activity_at?: Timestamp;
-  last_conversation_like_count?: number;
-  last_conversation_reply_count?: number;
-  last_conversation_title?: string;
+type ConversationData = {
+  region_id?: string;
+  title?: string;
+  created_at?: Timestamp;
+  like_count?: number;
+  reply_count?: number;
+};
+
+/** Resumo do fórum de uma RA, calculado a partir das conversas. */
+type RegionSummary = {
+  count: number;
+  latest?: ConversationData;
+  latestAt?: Date;
 };
 
 type ForumCardProps = {
@@ -112,7 +121,9 @@ function ForumCard({ item, onPress }: ForumCardProps): React.JSX.Element {
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>{item.region}</Text>
         <View style={styles.badge}>
-          <Text style={styles.badgeText}>{item.conversations} conversas</Text>
+          <Text style={styles.badgeText}>
+            {item.conversations} {item.conversations === 1 ? 'conversa' : 'conversas'}
+          </Text>
         </View>
       </View>
 
@@ -172,10 +183,35 @@ export default function ForumScreen(): React.JSX.Element {
       try {
         if (!db) throw new Error('Firebase não está configurado.');
 
-        const snapshot = await getDocs(collection(db, 'regions'));
-        const items = snapshot.docs.map((documento) => {
-          const region = documento.data() as RegionData;
-          const ultimaAtividade = region.last_activity_at?.toDate();
+        // As regras do Firestore não deixam o app atualizar regions/{id}, então os
+        // contadores saem direto das conversas.
+        const [perfis, snapshot] = await Promise.all([
+          listarPerfisRegioes(),
+          getDocs(collection(db, 'conversations')),
+        ]);
+
+        const resumos = new Map<string, RegionSummary>();
+        snapshot.docs.forEach((documento) => {
+          const conversa = documento.data() as ConversationData;
+          if (!conversa.region_id) return;
+          const resumo = resumos.get(conversa.region_id) ?? { count: 0 };
+          const criadaEm = conversa.created_at?.toDate();
+          resumo.count += 1;
+          if (!resumo.latest || (criadaEm && (!resumo.latestAt || criadaEm > resumo.latestAt))) {
+            resumo.latest = conversa;
+            resumo.latestAt = criadaEm;
+          }
+          resumos.set(conversa.region_id, resumo);
+        });
+
+        const regioes = new Map(perfis.map((perfil) => [perfil.id, perfil.name]));
+        resumos.forEach((_, regionId) => {
+          if (!regioes.has(regionId)) regioes.set(regionId, regionId);
+        });
+
+        const items = [...regioes].map(([id, name]) => {
+          const resumo = resumos.get(id);
+          const ultimaAtividade = resumo?.latestAt;
           const minutosDesdeAtividade = ultimaAtividade
             ? Math.max(0, Math.floor((Date.now() - ultimaAtividade.getTime()) / 60000))
             : null;
@@ -194,21 +230,24 @@ export default function ForumScreen(): React.JSX.Element {
           }
 
           return {
-            id: documento.id,
-            region: region.name ?? documento.id,
-            conversations: region.conversation_count ?? 0,
-            description: region.last_conversation_title ?? 'Nenhuma conversa recente.',
+            id,
+            region: name,
+            conversations: resumo?.count ?? 0,
+            description: resumo?.latest?.title?.trim() || 'Nenhuma conversa ainda. Comece uma!',
             online: minutosDesdeAtividade !== null && minutosDesdeAtividade < 15,
             activity,
-            comments: region.last_conversation_reply_count ?? 0,
-            likes: region.last_conversation_like_count ?? 0,
+            comments: resumo?.latest?.reply_count ?? 0,
+            likes: resumo?.latest?.like_count ?? 0,
+            lastActivity: ultimaAtividade?.getTime() ?? 0,
           };
         });
+        // Regiões mais movimentadas primeiro; sem atividade, em ordem alfabética.
+        items.sort((a, b) => b.lastActivity - a.lastActivity || a.region.localeCompare(b.region, 'pt-BR'));
 
         if (ativo) setForums(items);
       } catch (error) {
         if (ativo) {
-          setErro(error instanceof Error ? error.message : 'Erro ao carregar regiões.');
+          setErro(mensagemDeErro(error, 'Erro ao carregar regiões.'));
         }
       } finally {
         if (ativo) setLoading(false);
@@ -226,17 +265,20 @@ export default function ForumScreen(): React.JSX.Element {
       item={item}
       onPress={() =>
         router.push({
-          pathname: '/regiao',
+          pathname: '/conversas',
           params: { regionId: item.id, regionName: item.region },
         })
       }
     />
   );
+  const termo = normalizar(busca.trim());
   const regioesFiltradas = forums.filter((item) =>
-    `${item.region} ${item.description}`.toLocaleLowerCase('pt-BR').includes(busca.toLocaleLowerCase('pt-BR')),
+    normalizar(`${item.region} ${item.description}`).includes(termo),
   );
 
-  const renderHeader = (): React.JSX.Element => (
+  // Elemento, e não componente: recriar o componente a cada render remontava o
+  // TextInput e fechava o teclado a cada letra.
+  const header = (
     <View>
       <Text style={styles.title}>Fórum</Text>
       <Text style={styles.subtitle}>converse com moradores das RAs</Text>
@@ -262,7 +304,7 @@ export default function ForumScreen(): React.JSX.Element {
         data={regioesFiltradas}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        ListHeaderComponent={renderHeader}
+        ListHeaderComponent={header}
         ListEmptyComponent={
           loading ? (
             <ActivityIndicator style={styles.emptyState} size="large" color={colors.accent} />

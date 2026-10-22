@@ -1,7 +1,7 @@
 import { FirebaseError } from 'firebase/app';
 import { doc, getDoc } from 'firebase/firestore';
-import { useRouter } from 'expo-router';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +14,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
 
 import BarraNavegacao from '../components/BarraNavegacao';
@@ -26,6 +27,7 @@ import {
   removerFotoPerfil,
   type OrigemFoto,
 } from '../lib/fotoPerfil';
+import { listarFavoritos, listarPerfisRegioes } from '../lib/regioes';
 
 const fonts = {
   regular: 'Inter_400Regular',
@@ -259,22 +261,96 @@ function Avatar({
   );
 }
 
+type Favorito = { id: string; name: string };
+
 function CardFavoritos() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const [favoritos, setFavoritos] = useState<Favorito[] | null>(null);
+  const [aberto, setAberto] = useState(false);
+
+  // Recarrega ao voltar para o Perfil, para refletir o que foi favoritado nas RAs.
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      let ativo = true;
+      Promise.all([listarFavoritos(user.uid), listarPerfisRegioes()])
+        .then(([ids, perfis]) => {
+          if (!ativo) return;
+          const nomes = new Map(perfis.map((perfil) => [perfil.id, perfil.name]));
+          setFavoritos(
+            ids
+              .map((id) => ({ id, name: nomes.get(id) ?? id }))
+              .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+          );
+        })
+        .catch(() => {
+          if (ativo) setFavoritos([]);
+        });
+      return () => {
+        ativo = false;
+      };
+    }, [user]),
+  );
+
+  const total = favoritos?.length ?? 0;
+
   return (
-    <View style={styles.favorites}>
-      <View style={styles.favoritesInfo}>
-        <View style={styles.favoritesIcon}>
-          <HeartIcon />
+    <View style={styles.favoritesBox}>
+      <Pressable
+        style={({ pressed }) => [styles.favorites, pressed && styles.pressed]}
+        onPress={() => setAberto((valor) => !valor)}
+        accessibilityRole="button"
+        accessibilityLabel={`Meus favoritos, ${total} ${total === 1 ? 'região' : 'regiões'}`}
+        accessibilityState={{ expanded: aberto }}
+      >
+        <View style={styles.favoritesInfo}>
+          <View style={styles.favoritesIcon}>
+            <HeartIcon />
+          </View>
+          <View>
+            <Text style={styles.favoritesTitle}>Meus favoritos</Text>
+            <Text style={styles.favoritesSubtitle}>Regiões que você salvou</Text>
+          </View>
         </View>
-        <View>
-          <Text style={styles.favoritesTitle}>Meus favoritos</Text>
-          <Text style={styles.favoritesSubtitle}>Regiões que você salvou</Text>
+        <View style={styles.favoritesBadge}>
+          {favoritos === null ? (
+            <ActivityIndicator size="small" color={colors.gray} />
+          ) : (
+            <Text style={styles.favoritesCount}>{total}</Text>
+          )}
+          <ChevronIcon size={10} color={colors.gray} />
         </View>
-      </View>
-      <View style={styles.favoritesBadge}>
-        <Text style={styles.favoritesCount}>0</Text>
-        <ChevronIcon size={10} color={colors.gray} />
-      </View>
+      </Pressable>
+
+      {aberto ? (
+        <View style={styles.card}>
+          {total === 0 ? (
+            <Text style={styles.favoritesEmpty}>
+              Você ainda não favoritou nenhuma região. Toque no coração na página de uma RA.
+            </Text>
+          ) : (
+            favoritos?.map((favorito, index) => (
+              <View key={favorito.id}>
+                {index > 0 ? <View style={styles.divider} /> : null}
+                <Pressable
+                  style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/regiao',
+                      params: { regionId: favorito.id, regionName: favorito.name },
+                    })
+                  }
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.rowText}>{favorito.name}</Text>
+                  <ChevronIcon />
+                </Pressable>
+              </View>
+            ))
+          )}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -297,7 +373,9 @@ function Secao({ titulo, itens }: { titulo: string; itens: Item[] }) {
             <Pressable
               style={({ pressed }) => [styles.row, pressed && item.onPress && styles.pressed]}
               onPress={item.onPress}
+              disabled={!item.onPress}
               accessibilityRole="button"
+              accessibilityState={{ disabled: !item.onPress }}
             >
               <View style={styles.rowInfo}>
                 <View style={[styles.rowIcon, item.perigo && styles.rowIconDanger]}>
@@ -307,7 +385,7 @@ function Secao({ titulo, itens }: { titulo: string; itens: Item[] }) {
                   {item.label}
                 </Text>
               </View>
-              <ChevronIcon />
+              {item.onPress ? <ChevronIcon /> : <Text style={styles.emBreve}>Em breve</Text>}
             </Pressable>
           </View>
         ))}
@@ -386,6 +464,7 @@ export default function Perfil() {
   const { signOut } = useAuth();
   const router = useRouter();
   const { user, nome, usuario, fotoUrl, setFotoUrl } = usePerfil();
+  const insets = useSafeAreaInsets();
   const [opcoesVisiveis, setOpcoesVisiveis] = useState(false);
   const [enviando, setEnviando] = useState(false);
 
@@ -437,6 +516,22 @@ export default function Perfil() {
 
   const abrirOpcoes = () => setOpcoesVisiveis(true);
 
+  function sair() {
+    signOut().catch(() => avisar('Não foi possível sair', 'Verifique sua conexão e tente novamente.'));
+  }
+
+  function confirmarSaida() {
+    // Alert.alert não mostra botões no navegador.
+    if (Platform.OS === 'web') {
+      if (window.confirm('Sair da conta?')) sair();
+      return;
+    }
+    Alert.alert('Sair da conta?', 'Você precisará entrar de novo para usar o app.', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Sair', style: 'destructive', onPress: sair },
+    ]);
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.screen}>
@@ -486,11 +581,14 @@ export default function Perfil() {
                 { label: 'Configurações', icon: 'configuracoes' },
                 { label: 'Privacidade', icon: 'privacidade' },
                 { label: 'Ajuda e suporte', icon: 'ajuda' },
-                { label: 'Sair', icon: 'sair', perigo: true, onPress: signOut },
+                { label: 'Sair', icon: 'sair', perigo: true, onPress: confirmarSaida },
               ]}
             />
           </View>
         </ScrollView>
+
+        {/* Faixa sob a barra de status, para o conteúdo rolado não passar por trás do relógio. */}
+        <View style={[styles.statusBar, { height: insets.top }]} pointerEvents="none" />
 
         <BarraNavegacao ativa="perfil" />
       </View>
@@ -510,6 +608,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  statusBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.pink,
   },
   screen: {
     flex: 1,
@@ -599,6 +704,16 @@ const styles = StyleSheet.create({
   },
 
   /* Card de favoritos */
+  favoritesBox: {
+    gap: 8,
+  },
+  favoritesEmpty: {
+    padding: 16,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.gray,
+  },
   favorites: {
     height: 72,
     flexDirection: 'row',
@@ -705,6 +820,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
     color: colors.text,
+  },
+  emBreve: {
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    color: colors.gray,
   },
   rowTextDanger: {
     fontFamily: fonts.medium,

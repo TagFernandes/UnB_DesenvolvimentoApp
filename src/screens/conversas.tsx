@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,14 +22,15 @@ import {
   doc,
   getDoc,
   getDocs,
-  runTransaction,
-  serverTimestamp,
   Timestamp,
   query,
   where,
 } from 'firebase/firestore';
+import { useAuth } from '../contexts/AuthContext';
 import { auth, db } from '../lib/firebase';
+import { alternarCurtida, mensagemDeErro } from '../lib/forum';
 import { useFotoPerfil } from '../lib/fotoPerfil';
+import { iniciais, normalizar } from '../lib/regioes';
 
 /* ------------------------------------------------------------------ */
 /* Design tokens                                                       */
@@ -167,10 +168,6 @@ type ConversationData = {
   title?: string;
 };
 
-type RegionData = {
-  last_activity_at?: Timestamp;
-  last_conversation_id?: string;
-};
 
 function readDate(data: ConversationData): Date | undefined {
   return data.created_at?.toDate();
@@ -338,6 +335,24 @@ export default function ConversasScreen(): React.JSX.Element {
   const [selectedAuthor, setSelectedAuthor] = useState<Post | null>(null);
   const [openingChatUid, setOpeningChatUid] = useState<string | null>(null);
   const authorPhoto = useFotoPerfil(selectedAuthor?.authorUid);
+  const { user } = useAuth();
+  const myPhoto = useFotoPerfil(user?.uid);
+  const [myInitials, setMyInitials] = useState(() => iniciais(user?.email ?? '') || 'EU');
+
+  // Iniciais do nome salvo no perfil, como na tela de Perfil.
+  useEffect(() => {
+    if (!db || !user) return;
+    let active = true;
+    getDoc(doc(db, 'users', user.uid))
+      .then((profile) => {
+        const name = profile.data()?.nome;
+        if (active && typeof name === 'string' && name.trim()) setMyInitials(iniciais(name));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user]);
   const inFlightLikes = useRef(new Set<string>());
 
   async function openDirectChat(author: Post): Promise<void> {
@@ -391,7 +406,7 @@ export default function ConversasScreen(): React.JSX.Element {
     } catch (error) {
       Alert.alert(
         'Não foi possível abrir o chat',
-        error instanceof Error ? error.message : 'Verifique sua conexão e tente novamente.',
+        mensagemDeErro(error, 'Verifique sua conexão e tente novamente.'),
       );
     } finally {
       setOpeningChatUid(null);
@@ -430,7 +445,7 @@ export default function ConversasScreen(): React.JSX.Element {
           .map(({ post }) => post);
         if (active) setPosts(items);
       } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Erro ao carregar conversas.');
+        if (active) setError(mensagemDeErro(loadError, 'Erro ao carregar conversas.'));
       } finally {
         if (active) setLoading(false);
       }
@@ -444,7 +459,6 @@ export default function ConversasScreen(): React.JSX.Element {
 
   async function toggleLike(post: Post): Promise<void> {
     const userId = auth?.currentUser?.uid;
-    if (!db || !regionId) return;
     if (!userId) {
       Alert.alert('Entre na sua conta', 'É necessário entrar para curtir uma conversa.');
       return;
@@ -454,52 +468,14 @@ export default function ConversasScreen(): React.JSX.Element {
     inFlightLikes.current.add(post.id);
     setLikingPostIds((current) => [...current, post.id]);
     try {
-      const conversationRef = doc(db, 'conversations', post.id);
-      const likeRef = doc(db, 'conversations', post.id, 'likes', userId);
-      const regionRef = doc(db, 'regions', regionId);
-      const result = await runTransaction(db, async (transaction) => {
-        const [conversationSnapshot, likeSnapshot, regionSnapshot] = await Promise.all([
-          transaction.get(conversationRef),
-          transaction.get(likeRef),
-          transaction.get(regionRef),
-        ]);
-        if (!conversationSnapshot.exists()) throw new Error('Conversa não encontrada.');
-
-        const conversation = conversationSnapshot.data() as ConversationData;
-        if (conversation.region_id !== regionId) throw new Error('A conversa não pertence a esta região.');
-
-        const wasLiked = likeSnapshot.exists();
-        const likeCount = Math.max(0, (conversation.like_count ?? 0) + (wasLiked ? -1 : 1));
-        if (wasLiked) {
-          transaction.delete(likeRef);
-        } else {
-          transaction.set(likeRef, { user_uid: userId, created_at: serverTimestamp() });
-        }
-        transaction.update(conversationRef, { like_count: likeCount });
-
-        if (regionSnapshot.exists()) {
-          const region = regionSnapshot.data() as RegionData;
-          const isLatestConversation = region.last_conversation_id === post.id || (
-            !region.last_conversation_id &&
-            region.last_activity_at !== undefined &&
-            conversation.created_at !== undefined &&
-            region.last_activity_at.isEqual(conversation.created_at)
-          );
-          if (isLatestConversation) {
-            transaction.update(regionRef, { last_conversation_like_count: likeCount });
-          }
-        }
-
-        return { liked: !wasLiked, likes: likeCount };
-      });
-
+      const result = await alternarCurtida(post.id, userId);
       setPosts((current) => current.map((item) =>
         item.id === post.id ? { ...item, liked: result.liked, likes: result.likes } : item,
       ));
     } catch (likeError) {
       Alert.alert(
         'Não foi possível atualizar a curtida',
-        likeError instanceof Error ? likeError.message : 'Tente novamente.',
+        mensagemDeErro(likeError, 'Tente novamente.'),
       );
     } finally {
       inFlightLikes.current.delete(post.id);
@@ -509,8 +485,8 @@ export default function ConversasScreen(): React.JSX.Element {
 
   const visiblePosts = posts.filter((post) => {
     const matchesFilter = activeFilter === 'Todas' || CATEGORY_LABELS[post.category] === activeFilter;
-    const text = `${post.title} ${post.body} ${post.author}`.toLocaleLowerCase('pt-BR');
-    return matchesFilter && text.includes(search.toLocaleLowerCase('pt-BR'));
+    const text = normalizar(`${post.title} ${post.body} ${post.author}`);
+    return matchesFilter && text.includes(normalizar(search.trim()));
   });
 
   const renderItem: ListRenderItem<Post> = ({ item }) => (
@@ -530,7 +506,9 @@ export default function ConversasScreen(): React.JSX.Element {
     </View>
   );
 
-  const renderHeader = (): React.JSX.Element => (
+  // Elemento, e não componente: recriar o componente a cada render remontava o
+  // TextInput e fechava o teclado a cada letra.
+  const header = (
     <View>
       <View style={{ paddingHorizontal: gutter }}>
         <Text style={styles.title} accessibilityRole="header">
@@ -595,8 +573,13 @@ export default function ConversasScreen(): React.JSX.Element {
             accessibilityLabel="Abrir perfil"
             hitSlop={(sizes.minTouch - sizes.topButton) / 2}
             style={styles.profileButton}
+            onPress={() => router.push('/perfil')}
           >
-            <Text style={styles.profileText}>MR</Text>
+            {myPhoto ? (
+              <Image source={{ uri: myPhoto }} style={styles.profileImage} />
+            ) : (
+              <Text style={styles.profileText}>{myInitials}</Text>
+            )}
           </Pressable>
         </View>
 
@@ -604,7 +587,7 @@ export default function ConversasScreen(): React.JSX.Element {
           data={visiblePosts}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          ListHeaderComponent={renderHeader}
+          ListHeaderComponent={header}
           ListEmptyComponent={
             loading ? (
               <ActivityIndicator style={styles.emptyState} size="large" color={colors.accent} />
@@ -653,17 +636,19 @@ export default function ConversasScreen(): React.JSX.Element {
                   )}
                 </View>
                 <Text style={styles.profileModalName}>{selectedAuthor.author}</Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Mandar mensagem"
-                  style={[styles.messageButton, openingChatUid && styles.messageButtonDisabled]}
-                  disabled={openingChatUid !== null}
-                  onPress={() => void openDirectChat(selectedAuthor)}
-                >
-                  <Text style={styles.messageButtonText}>
-                    {openingChatUid === selectedAuthor.authorUid ? 'Abrindo chat...' : 'Mandar mensagem'}
-                  </Text>
-                </Pressable>
+                {selectedAuthor.authorUid && selectedAuthor.authorUid !== user?.uid ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Mandar mensagem"
+                    style={[styles.messageButton, openingChatUid && styles.messageButtonDisabled]}
+                    disabled={openingChatUid !== null}
+                    onPress={() => void openDirectChat(selectedAuthor)}
+                  >
+                    <Text style={styles.messageButtonText}>
+                      {openingChatUid === selectedAuthor.authorUid ? 'Abrindo chat...' : 'Mandar mensagem'}
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
             )}
           </View>
@@ -749,6 +734,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  profileImage: {
+    width: '100%',
+    height: '100%',
   },
   profileText: {
     fontSize: fontSizes.meta,
