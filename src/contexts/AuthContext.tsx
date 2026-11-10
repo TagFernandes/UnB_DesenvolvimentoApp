@@ -11,6 +11,10 @@ import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { createContext, use, useEffect, useState, type ReactNode } from 'react';
 
 import { auth, db } from '../lib/firebase';
+import {
+  registerAndSavePushToken,
+  removePushTokenOnSignOut,
+} from '../services/notificationService';
 
 type AuthContextValue = {
   /** Usuário logado, ou null se ninguém entrou. */
@@ -46,6 +50,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    if (user && !isSigningUp) {
+      void registerAndSavePushToken(user.uid);
+    }
+  }, [user, isSigningUp]);
 
   async function signIn(email: string, senha: string) {
     if (!auth) {
@@ -103,6 +113,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signOut() {
+    if (auth?.currentUser) {
+      await removePushTokenOnSignOut(auth.currentUser.uid);
+    }
     if (auth) await firebaseSignOut(auth);
   }
 

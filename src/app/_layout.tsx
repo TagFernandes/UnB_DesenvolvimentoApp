@@ -6,9 +6,10 @@ import {
   useFonts,
 } from '@expo-google-fonts/inter';
 import { Poppins_400Regular } from '@expo-google-fonts/poppins';
-import { Stack } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 
@@ -24,7 +25,10 @@ export default function RootLayout() {
 }
 
 function RootNavigator() {
+  const router = useRouter();
   const { user, isLoading, isSigningUp } = useAuth();
+  const handledNotificationIdRef = useRef<string | null>(null);
+
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -40,6 +44,47 @@ function RootNavigator() {
       SplashScreen.hideAsync().catch(() => {});
     }
   }, [pronto]);
+
+  useEffect(() => {
+    if (!pronto || !user || isSigningUp) return;
+
+    function handleNotificationNavigation(response: Notifications.NotificationResponse | null) {
+      if (!response) return;
+
+      const notificationId = response.notification.request.identifier;
+      if (handledNotificationIdRef.current === notificationId) return;
+
+      const data = response.notification.request.content.data as
+        | { chatId?: string; senderId?: string; senderName?: string }
+        | undefined;
+
+      if (data?.chatId) {
+        handledNotificationIdRef.current = notificationId;
+        router.push({
+          pathname: '/chat',
+          params: {
+            chatId: String(data.chatId),
+            ...(data.senderId ? { recipientUid: String(data.senderId) } : {}),
+            ...(data.senderName ? { title: String(data.senderName) } : {}),
+          },
+        });
+      }
+    }
+
+    // Caso a app estivesse fechada e tenha sido aberta pelo toque na notificação
+    Notifications.getLastNotificationResponseAsync()
+      .then(handleNotificationNavigation)
+      .catch(() => {});
+
+    // Caso a app esteja em segundo plano e o utilizador toque na notificação
+    const subscription = Notifications.addNotificationResponseReceivedListener(
+      handleNotificationNavigation,
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [pronto, user, isSigningUp, router]);
 
   if (!pronto) {
     return null;

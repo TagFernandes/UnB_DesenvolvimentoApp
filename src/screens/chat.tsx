@@ -35,6 +35,10 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { auth, db } from '../lib/firebase';
 import { useFotoPerfil } from '../lib/fotoPerfil';
+import {
+  sendChatPushNotification,
+  setActiveChatContext,
+} from '../services/notificationService';
 import { chatColors as colors } from '../theme/colors';
 
 type MessageData = {
@@ -152,6 +156,17 @@ export default function ChatScreen(): React.JSX.Element {
   const lastReadMessageIdRef = useRef<string | null>(null);
   // Evita criar o chat duas vezes enquanto a primeira mensagem ainda está sendo enviada.
   const isCreatingChatRef = useRef(false);
+
+  // Informa ao serviço de notificações qual conversa está aberta para não exibir alerta duplicado
+  useEffect(() => {
+    setActiveChatContext(
+      resolvedChatIdRef.current ?? chatId ?? null,
+      otherUid ?? recipientUid ?? null,
+    );
+    return () => {
+      setActiveChatContext(null, null);
+    };
+  }, [chatId, otherUid, recipientUid, chatReady]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -415,6 +430,16 @@ export default function ChatScreen(): React.JSX.Element {
         });
 
         await batch.commit();
+
+        const targetUid = otherUid ?? recipientUid;
+        if (targetUid) {
+          void sendChatPushNotification({
+            senderUid: user.uid,
+            recipientUid: targetUid,
+            chatId: resolvedChatId,
+            text,
+          });
+        }
       } else {
         const otherUserId = recipientUid;
         if (!otherUserId || otherUserId === user.uid) {
@@ -473,6 +498,13 @@ export default function ChatScreen(): React.JSX.Element {
             senderId: user.uid,
             text,
           });
+        });
+
+        void sendChatPushNotification({
+          senderUid: user.uid,
+          recipientUid: otherUserId,
+          chatId: directChatId,
+          text,
         });
 
         router.replace({
