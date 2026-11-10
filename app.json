@@ -11,6 +11,7 @@
     },
     "android": {
       "package": "com.mapeei.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#FAFBF8",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -30,6 +31,7 @@
       "expo-router",
       "expo-font",
       "expo-splash-screen",
+      "expo-notifications",
       [
         "expo-image-picker",
         {
