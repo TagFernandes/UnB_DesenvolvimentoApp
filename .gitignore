@@ -47,3 +47,4 @@ serviceAccount*.json
 
 # ambiente virtual do scripts/seed_regioes.py
 .venv/
+google-services.json
