@@ -55,7 +55,13 @@ function RootNavigator() {
       if (handledNotificationIdRef.current === notificationId) return;
 
       const data = response.notification.request.content.data as
-        | { chatId?: string; senderId?: string; senderName?: string }
+        | {
+            chatId?: string;
+            senderId?: string;
+            senderName?: string;
+            conversationId?: string;
+            regionId?: string;
+          }
         | undefined;
 
       if (data?.chatId) {
@@ -66,6 +72,15 @@ function RootNavigator() {
             chatId: String(data.chatId),
             ...(data.senderId ? { recipientUid: String(data.senderId) } : {}),
             ...(data.senderName ? { title: String(data.senderName) } : {}),
+          },
+        });
+      } else if (data?.conversationId) {
+        handledNotificationIdRef.current = notificationId;
+        router.push({
+          pathname: '/conversa',
+          params: {
+            conversationId: String(data.conversationId),
+            ...(data.regionId ? { regionId: String(data.regionId) } : {}),
           },
         });
       }

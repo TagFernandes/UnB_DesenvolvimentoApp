@@ -15,6 +15,7 @@ import { db } from '../lib/firebase';
 
 let activeChatId: string | null = null;
 let activePeerUid: string | null = null;
+let activeConversationId: string | null = null;
 
 /**
  * Regista qual chat está aberto no ecrã para evitar notificações duplicadas
@@ -25,18 +26,28 @@ export function setActiveChatContext(chatId: string | null, peerUid: string | nu
   activePeerUid = peerUid;
 }
 
+/**
+ * Regista qual tópico do fórum está aberto no ecrã para não exibir banner duplicado.
+ */
+export function setActiveConversationContext(conversationId: string | null): void {
+  activeConversationId = conversationId;
+}
+
 // Configura o comportamento quando a notificação chega com a aplicação aberta
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const data = notification.request.content.data as
-      | { chatId?: string; senderId?: string }
+      | { chatId?: string; senderId?: string; conversationId?: string }
       | undefined;
 
     const isSameChatOpen =
       (Boolean(activeChatId) && data?.chatId === activeChatId) ||
       (Boolean(activePeerUid) && data?.senderId === activePeerUid);
 
-    if (isSameChatOpen) {
+    const isSameForumOpen =
+      Boolean(activeConversationId) && data?.conversationId === activeConversationId;
+
+    if (isSameChatOpen || isSameForumOpen) {
       return {
         shouldShowAlert: false,
         shouldPlaySound: false,
@@ -138,8 +149,67 @@ export async function removePushTokenOnSignOut(userId: string): Promise<void> {
 }
 
 /**
- * Procura os tokens do destinatário no Firestore e envia a notificação via Expo Push Service.
- * Também remove automaticamente tokens inválidos (DeviceNotRegistered).
+ * Função auxiliar interna para disparar notificações para um utilizador específico
+ * e limpar tokens inválidos (DeviceNotRegistered).
+ */
+async function dispatchPushToRecipient(params: {
+  recipientUid: string;
+  title: string;
+  body: string;
+  data: Record<string, string>;
+}): Promise<void> {
+  const { recipientUid, title, body, data } = params;
+  if (!db || !recipientUid) return;
+
+  const recipientRef = doc(db, 'users', recipientUid);
+  const recipientSnap = await getDoc(recipientRef);
+  if (!recipientSnap.exists()) return;
+
+  const rawTokens = recipientSnap.data()?.pushTokens;
+  const tokens = Array.isArray(rawTokens)
+    ? [...new Set(rawTokens.filter((t): t is string => typeof t === 'string' && Boolean(t.trim())))]
+    : [];
+
+  if (tokens.length === 0) return;
+
+  const messages = tokens.map((token) => ({
+    to: token,
+    sound: 'default',
+    title,
+    body,
+    channelId: 'mensagens',
+    data,
+  }));
+
+  const response = await fetch('https://exp.host/--/api/v2/push/send', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Accept-encoding': 'gzip, deflate',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(messages),
+  });
+
+  const result = await response.json();
+
+  if (Array.isArray(result?.data)) {
+    for (let i = 0; i < result.data.length; i++) {
+      const ticket = result.data[i];
+      if (ticket?.status === 'error' && ticket?.details?.error === 'DeviceNotRegistered') {
+        const invalidToken = tokens[i];
+        if (invalidToken) {
+          await updateDoc(recipientRef, {
+            pushTokens: arrayRemove(invalidToken),
+          }).catch(() => {});
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Envia notificação de nova mensagem no Chat Direto.
  */
 export async function sendChatPushNotification(params: {
   senderUid: string;
@@ -151,67 +221,130 @@ export async function sendChatPushNotification(params: {
   if (!db || !recipientUid || senderUid === recipientUid) return;
 
   try {
-    const recipientRef = doc(db, 'users', recipientUid);
-    const [recipientSnap, senderSnap] = await Promise.all([
-      getDoc(recipientRef),
-      getDoc(doc(db, 'users', senderUid)),
-    ]);
-
-    if (!recipientSnap.exists()) return;
-
-    const rawTokens = recipientSnap.data()?.pushTokens;
-    const tokens = Array.isArray(rawTokens)
-      ? [...new Set(rawTokens.filter((t): t is string => typeof t === 'string' && Boolean(t.trim())))]
-      : [];
-
-    if (tokens.length === 0) return;
-
+    const senderSnap = await getDoc(doc(db, 'users', senderUid));
     const senderNameRaw = senderSnap.data()?.nome;
     const senderName =
       typeof senderNameRaw === 'string' && senderNameRaw.trim()
         ? senderNameRaw.trim()
         : 'Nova mensagem';
 
-    const messages = tokens.map((token) => ({
-      to: token,
-      sound: 'default',
+    await dispatchPushToRecipient({
+      recipientUid,
       title: senderName,
       body: text,
-      channelId: 'mensagens',
       data: {
         chatId,
         senderId: senderUid,
         senderName,
       },
-    }));
-
-    const response = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(messages),
     });
-
-    const result = await response.json();
-
-    // Limpa tokens inválidos se o dispositivo tiver desinstalado a app
-    if (Array.isArray(result?.data)) {
-      for (let i = 0; i < result.data.length; i++) {
-        const ticket = result.data[i];
-        if (ticket?.status === 'error' && ticket?.details?.error === 'DeviceNotRegistered') {
-          const invalidToken = tokens[i];
-          if (invalidToken) {
-            await updateDoc(recipientRef, {
-              pushTokens: arrayRemove(invalidToken),
-            }).catch(() => {});
-          }
-        }
-      }
-    }
   } catch (error) {
-    console.warn('Falha ao enviar notificação push:', error);
+    console.warn('Falha ao enviar notificação push de chat:', error);
+  }
+}
+
+/**
+ * Envia notificação quando alguém dá "gostei" numa conversa/publicação do fórum.
+ */
+export async function sendForumLikePushNotification(params: {
+  senderUid: string;
+  recipientUid: string;
+  conversationId: string;
+  conversationTitle: string;
+  regionId?: string;
+}): Promise<void> {
+  const { senderUid, recipientUid, conversationId, conversationTitle, regionId } = params;
+  if (!db || !recipientUid || senderUid === recipientUid) return;
+
+  try {
+    const senderSnap = await getDoc(doc(db, 'users', senderUid));
+    const senderNameRaw = senderSnap.data()?.nome;
+    const senderName =
+      typeof senderNameRaw === 'string' && senderNameRaw.trim()
+        ? senderNameRaw.trim()
+        : 'Alguém';
+
+    await dispatchPushToRecipient({
+      recipientUid,
+      title: 'Curtiram sua conversa no fórum',
+      body: `${senderName} curtiu "${conversationTitle}"`,
+      data: {
+        conversationId,
+        ...(regionId ? { regionId } : {}),
+      },
+    });
+  } catch (error) {
+    console.warn('Falha ao enviar notificação de curtida no fórum:', error);
+  }
+}
+
+/**
+ * Envia notificação quando alguém comenta/responde num tópico do fórum:
+ * 1. Notifica o autor da conversa.
+ * 2. Notifica outros utilizadores que também já comentaram naquele tópico.
+ */
+export async function sendForumCommentPushNotification(params: {
+  senderUid: string;
+  senderName: string;
+  conversationId: string;
+  conversationTitle: string;
+  regionId?: string;
+  postAuthorUid?: string;
+  participantUids: string[];
+  commentText: string;
+}): Promise<void> {
+  const {
+    senderUid,
+    senderName,
+    conversationId,
+    conversationTitle,
+    regionId,
+    postAuthorUid,
+    participantUids,
+    commentText,
+  } = params;
+
+  if (!db) return;
+
+  try {
+    const displaySender = senderName && senderName !== '-' ? senderName : 'Alguém';
+    const payloadData: Record<string, string> = {
+      conversationId,
+      ...(regionId ? { regionId } : {}),
+    };
+
+    const tasks: Promise<void>[] = [];
+
+    // 1. Notifica o autor do tópico (se não for ele mesmo a comentar)
+    if (postAuthorUid && postAuthorUid !== senderUid) {
+      tasks.push(
+        dispatchPushToRecipient({
+          recipientUid: postAuthorUid,
+          title: `Novo comentário em "${conversationTitle}"`,
+          body: `${displaySender}: ${commentText}`,
+          data: payloadData,
+        }),
+      );
+    }
+
+    // 2. Notifica quem já tinha comentado no tópico (sem repetir o autor do post nem quem enviou)
+    const uniqueParticipants = [...new Set(participantUids)].filter(
+      (uid) => Boolean(uid) && uid !== senderUid && uid !== postAuthorUid,
+    );
+
+    for (const participantUid of uniqueParticipants) {
+      tasks.push(
+        dispatchPushToRecipient({
+          recipientUid: participantUid,
+          title: `Nova resposta em "${conversationTitle}"`,
+          body: `${displaySender} também comentou: ${commentText}`,
+          data: payloadData,
+        }),
+      );
+    }
+
+    await Promise.all(tasks);
+  } catch (error) {
+    console.warn('Falha ao enviar notificação de comentário no fórum:', error);
   }
 }

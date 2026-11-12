@@ -33,6 +33,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { auth, db } from '../lib/firebase';
 import { alternarCurtida, mensagemDeErro } from '../lib/forum';
 import { useFotoPerfil } from '../lib/fotoPerfil';
+import {
+  sendForumCommentPushNotification,
+  setActiveConversationContext,
+} from '../services/notificationService';
 
 const colors = {
   background: '#FDF4F6',
@@ -155,6 +159,13 @@ export default function ConversaScreen(): React.JSX.Element {
   const currentUid = auth?.currentUser?.uid;
 
   useEffect(() => {
+    setActiveConversationContext(conversationId ?? null);
+    return () => {
+      setActiveConversationContext(null);
+    };
+  }, [conversationId]);
+
+  useEffect(() => {
     let active = true;
 
     async function loadConversation(): Promise<void> {
@@ -221,10 +232,18 @@ export default function ConversaScreen(): React.JSX.Element {
       // O ID é gerado no cliente para o comentário poder ser gravado dentro da transação.
       const commentRef = doc(collection(conversationRef, 'comments'));
 
+      let postAuthorUid = conversation?.authorUid ?? '';
+      let postTitle = conversation?.title ?? 'Conversa';
+      let postRegionId = regionId;
+
       const replyCount = await runTransaction(firestore, async (transaction) => {
         const conversationSnapshot = await transaction.get(conversationRef);
         if (!conversationSnapshot.exists()) throw new Error('Conversa não encontrada.');
         const data = conversationSnapshot.data() as ConversationData;
+        postAuthorUid = data.author_uid ?? postAuthorUid;
+        postTitle = data.title?.trim() || postTitle;
+        postRegionId = data.region_id ?? postRegionId;
+
         const nextReplyCount = (data.reply_count ?? 0) + 1;
         transaction.set(commentRef, {
           body: cleanText,
@@ -240,12 +259,25 @@ export default function ConversaScreen(): React.JSX.Element {
         return nextReplyCount;
       });
 
+      const previousCommenters = comments.map((item) => item.authorUid);
+
       setComments((current) => [
         ...current,
         { id: commentRef.id, authorUid: currentUser.uid, author: authorName, initials: getInitials(authorName), body: cleanText, time: 'Agora' },
       ]);
       setConversation((current) => (current ? { ...current, comments: replyCount } : current));
       setText('');
+
+      void sendForumCommentPushNotification({
+        senderUid: currentUser.uid,
+        senderName: authorName,
+        conversationId,
+        conversationTitle: postTitle,
+        regionId: postRegionId,
+        postAuthorUid,
+        participantUids: previousCommenters,
+        commentText: cleanText,
+      });
     } catch (sendError) {
       setError(mensagemDeErro(sendError, 'Não foi possível enviar o comentário.'));
     } finally {

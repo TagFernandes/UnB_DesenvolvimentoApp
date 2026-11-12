@@ -1,6 +1,7 @@
 import { FirebaseError } from 'firebase/app';
 import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 
+import { sendForumLikePushNotification } from '../services/notificationService';
 import { db } from './firebase';
 
 /**
@@ -17,15 +18,27 @@ export async function alternarCurtida(
   const conversationRef = doc(firestore, 'conversations', conversationId);
   const likeRef = doc(firestore, 'conversations', conversationId, 'likes', userId);
 
-  return runTransaction(firestore, async (transaction) => {
+  let targetAuthorUid = '';
+  let conversationTitle = 'sua conversa';
+  let regionId: string | undefined;
+
+  const result = await runTransaction(firestore, async (transaction) => {
     const [conversationSnapshot, likeSnapshot] = await Promise.all([
       transaction.get(conversationRef),
       transaction.get(likeRef),
     ]);
     if (!conversationSnapshot.exists()) throw new Error('Conversa não encontrada.');
 
+    const data = conversationSnapshot.data();
+    targetAuthorUid = typeof data.author_uid === 'string' ? data.author_uid : '';
+    conversationTitle =
+      typeof data.title === 'string' && data.title.trim()
+        ? data.title.trim()
+        : 'sua conversa';
+    regionId = typeof data.region_id === 'string' ? data.region_id : undefined;
+
     const wasLiked = likeSnapshot.exists();
-    const atual = conversationSnapshot.data().like_count;
+    const atual = data.like_count;
     const likeCount = Math.max(0, (typeof atual === 'number' ? atual : 0) + (wasLiked ? -1 : 1));
 
     if (wasLiked) {
@@ -37,6 +50,19 @@ export async function alternarCurtida(
 
     return { liked: !wasLiked, likes: likeCount };
   });
+
+  // Dispara notificação apenas quando o utilizador dá "gostei" (não ao remover curtida)
+  if (result.liked && targetAuthorUid && targetAuthorUid !== userId) {
+    void sendForumLikePushNotification({
+      senderUid: userId,
+      recipientUid: targetAuthorUid,
+      conversationId,
+      conversationTitle,
+      regionId,
+    });
+  }
+
+  return result;
 }
 
 /** Traduz os erros do Firestore, que chegam em inglês, para mostrar ao usuário. */
