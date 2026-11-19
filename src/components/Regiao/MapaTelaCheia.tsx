@@ -7,7 +7,7 @@ import { colors, fonts } from './tokens';
 
 type Props = {
   visivel: boolean;
-  nome: string;
+  nome?: string;
   lat: number;
   lng: number;
   onFechar: () => void;
@@ -43,11 +43,13 @@ export default function MapaTelaCheia({ visivel, nome, lat, lng, onFechar }: Pro
         </MapView>
 
         <View style={[styles.topo, { top: insets.top + 12 }]}>
-          <View style={styles.etiqueta}>
-            <Text style={styles.nome} numberOfLines={1}>
+          {nome ? (
+            <View style={styles.etiqueta}>
+              <Text style={styles.nome} numberOfLines={1}>
               {nome}
             </Text>
           </View>
+          ): null}
           <Pressable
             onPress={onFechar}
             hitSlop={12}

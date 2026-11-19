@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
@@ -51,6 +52,7 @@ export default function NovaConversaScreen(): React.JSX.Element {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [category, setCategory] = useState<CategoryCode>('general');
+  const [includeLocation, setIncludeLocation] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,6 +97,22 @@ export default function NovaConversaScreen(): React.JSX.Element {
       const currentUser = auth?.currentUser;
       if (!currentUser) throw new Error('Entre na sua conta para publicar uma conversa.');
 
+      let location: { lat: number; lng: number } | undefined;
+      if (includeLocation) {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (permission.status !== 'granted') {
+          throw new Error('Permita o acesso à localização ou desmarque essa opção.');
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        location = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+      }
+
       const profile = await getDoc(doc(db, 'users', currentUser.uid));
       const profileName = profile.data()?.nome;
       const authorName = typeof profileName === 'string' && profileName.trim()
@@ -113,6 +131,7 @@ export default function NovaConversaScreen(): React.JSX.Element {
         like_count: 0,
         reply_count: 0,
         created_at: serverTimestamp(),
+        ...(location ? { location } : {}),
       });
 
       // Vindo da lista de conversas da RA, volta para ela (que recarrega ao ganhar foco)
@@ -214,6 +233,23 @@ export default function NovaConversaScreen(): React.JSX.Element {
             accessibilityLabel="Texto da conversa"
           />
 
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityLabel="Adicionar minha localização atual"
+            accessibilityState={{ checked: includeLocation }}
+            style={[styles.locationOption, includeLocation && styles.optionSelected]}
+            onPress={() => setIncludeLocation((current) => !current)}
+          >
+            <Text style={[styles.optionText, includeLocation && styles.optionTextSelected]}>
+              Adicionar minha localização atual
+            </Text>
+            <Ionicons
+              name={includeLocation ? 'checkbox' : 'square-outline'}
+              size={20}
+              color={colors.accent}
+            />
+          </Pressable>
+
           {error ? <Text style={styles.error} accessibilityLiveRegion="polite">{error}</Text> : null}
 
           <Pressable
@@ -254,6 +290,18 @@ const styles = StyleSheet.create({
   regionList: { gap: 8 },
   regionOption: {
     minHeight: 44,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  locationOption: {
+    minHeight: 44,
+    marginTop: 16,
     paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: colors.border,

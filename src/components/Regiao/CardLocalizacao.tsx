@@ -7,7 +7,7 @@ import MapaTelaCheia from './MapaTelaCheia';
 import { colors, fonts } from './tokens';
 
 type Props = {
-  nome: string;
+  nome?: string;
   lat: number | null;
   lng: number | null;
 };
@@ -58,9 +58,11 @@ export default function CardLocalizacao({ nome, lat, lng }: Props) {
           <View style={styles.pin}>
             <Ionicons name="location-sharp" size={15} color={colors.white} />
           </View>
-          <View style={styles.etiqueta}>
-            <Text style={styles.nome}>{nome}</Text>
-          </View>
+          {nome ? (
+            <View style={styles.etiqueta}>
+              <Text style={styles.nome}>{nome}</Text>
+            </View>
+          ): null}
         </View>
 
         {temCoordenadas && (

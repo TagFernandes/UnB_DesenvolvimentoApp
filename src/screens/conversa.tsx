@@ -37,6 +37,7 @@ import {
   sendForumCommentPushNotification,
   setActiveConversationContext,
 } from '../services/notificationService';
+import CardLocalizacao from '../components/Regiao/CardLocalizacao';
 
 const colors = {
   background: '#FDF4F6',
@@ -67,6 +68,7 @@ type ConversationData = {
   reply_count?: number;
   region_id?: string;
   title?: string;
+  location?: Location;
 };
 
 type CommentData = {
@@ -74,6 +76,12 @@ type CommentData = {
   author_uid?: string;
   body?: string;
   created_at?: Timestamp;
+};
+
+type Location = {
+  nome?: string;
+  lat: number;
+  lng: number;
 };
 
 type Conversation = {
@@ -85,6 +93,7 @@ type Conversation = {
   likes: number;
   liked: boolean;
   comments: number;
+  location?: Location;
 };
 
 type Comment = {
@@ -156,6 +165,7 @@ export default function ConversaScreen(): React.JSX.Element {
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
   const [deletingPost, setDeletingPost] = useState(false);
   const [liking, setLiking] = useState(false);
+  const [location, setLocation] = useState(false);
   const currentUid = auth?.currentUser?.uid;
 
   useEffect(() => {
@@ -195,6 +205,7 @@ export default function ConversaScreen(): React.JSX.Element {
           likes: data.like_count ?? 0,
           liked: likeSnapshot?.exists() ?? false,
           comments: data.reply_count ?? 0,
+          location: data.location ?? undefined
         });
         setComments(commentsSnapshot.docs.map((item) => mapComment(item.id, item.data() as CommentData)));
       } catch (loadError) {
@@ -509,6 +520,13 @@ export default function ConversaScreen(): React.JSX.Element {
               </Text>
             </Pressable>
           </View>
+          {conversation.location ? (
+              <CardLocalizacao
+                nome={conversation.location.nome}
+                lat={conversation.location.lat}
+                lng={conversation.location.lng}
+              />
+            ): null}
         </View>
         <Text style={styles.sectionTitle}>Comentários</Text>
       </View>
