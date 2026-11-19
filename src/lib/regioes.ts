@@ -24,6 +24,12 @@ export type ItemPercentual = { label: string; percent: number };
 export type ItemRanking = { regionId: string; name: string; value: number };
 export type Ocorrencia = { label: string; value: number };
 
+
+export type LocationRegiao = {
+  lat: number;
+  lng: number;
+};
+
 export type PerfilRegiao = {
   id: string;
   name: string;
@@ -45,6 +51,7 @@ export type PerfilRegiao = {
     source: string;
     note: string | null;
   };
+  latestPostsLocation: LocationRegiao[];
 };
 
 export type DestaqueForum = {
@@ -82,7 +89,19 @@ function textos(valor: unknown): string[] {
   return lista(valor).filter((item): item is string => typeof item === 'string' && !!item);
 }
 
-function lerPerfil(id: string, dados: Bruto): PerfilRegiao {
+function locaisPosts(valor: unknown): LocationRegiao[] {
+  return lista(valor).filter((item): item is LocationRegiao => {
+    const bruto = objeto(item);
+    return (
+      typeof bruto.lat === 'number' &&
+      Number.isFinite(bruto.lat) &&
+      typeof bruto.lng === 'number' &&
+      Number.isFinite(bruto.lng)
+    );
+  }).slice(-3);
+}
+
+function lerPerfil(id: string, dados: Bruto, dadosRegion: Bruto = {}): PerfilRegiao {
   const mobility = objeto(dados.mobility);
   const modes = objeto(mobility.modes);
   const leisure = objeto(dados.leisure);
@@ -141,6 +160,7 @@ function lerPerfil(id: string, dados: Bruto): PerfilRegiao {
       source: texto(safety.source),
       note: texto(safety.note) || null,
     },
+    latestPostsLocation: locaisPosts(dadosRegion.latest_posts_location),
   };
 }
 
@@ -153,14 +173,30 @@ function exigirDb() {
 
 /** Retorna null quando a RA ainda não tem perfil cadastrado. */
 export async function buscarPerfilRegiao(regionId: string): Promise<PerfilRegiao | null> {
-  const snapshot = await getDoc(doc(exigirDb(), COLECAO_PERFIS, regionId));
-  return snapshot.exists() ? lerPerfil(snapshot.id, snapshot.data()) : null;
+  const firestore = exigirDb();
+  const [snapshot, snapshotRegion] = await Promise.all([
+    getDoc(doc(firestore, COLECAO_PERFIS, regionId)),
+    getDoc(doc(firestore, 'regions', regionId)),
+  ]);
+  return snapshot.exists()
+    ? lerPerfil(snapshot.id, snapshot.data(), snapshotRegion.exists() ? snapshotRegion.data() : {})
+    : null;
 }
 
 export async function listarPerfisRegioes(): Promise<PerfilRegiao[]> {
-  const snapshot = await getDocs(collection(exigirDb(), COLECAO_PERFIS));
-  return snapshot.docs
-    .map((documento) => lerPerfil(documento.id, documento.data()))
+  const firestore = exigirDb();
+  const snapshot = await getDocs(collection(firestore, COLECAO_PERFIS));
+  const perfis = await Promise.all(
+    snapshot.docs.map(async (documento) => {
+      const snapshotRegion = await getDoc(doc(firestore, 'regions', documento.id));
+      return lerPerfil(
+        documento.id,
+        documento.data(),
+        snapshotRegion.exists() ? snapshotRegion.data() : {},
+      );
+    }),
+  );
+  return perfis
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }
 

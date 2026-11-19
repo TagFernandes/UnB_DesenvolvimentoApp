@@ -3,6 +3,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import type { LocationRegiao } from '../../lib/regioes';
 import { colors, fonts } from './tokens';
 
 type Props = {
@@ -10,6 +11,7 @@ type Props = {
   nome?: string;
   lat: number;
   lng: number;
+  latestPostsLocation?: LocationRegiao[];
   onFechar: () => void;
 };
 
@@ -17,7 +19,14 @@ type Props = {
 const DELTA_TELA_CHEIA = 0.04;
 
 /** Mapa interativo da RA em tela cheia, aberto a partir do card de localização. */
-export default function MapaTelaCheia({ visivel, nome, lat, lng, onFechar }: Props) {
+export default function MapaTelaCheia({
+  visivel,
+  nome,
+  lat,
+  lng,
+  latestPostsLocation = [],
+  onFechar,
+}: Props) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -40,6 +49,14 @@ export default function MapaTelaCheia({ visivel, nome, lat, lng, onFechar }: Pro
           toolbarEnabled={false}
         >
           <Marker coordinate={{ latitude: lat, longitude: lng }} title={nome} pinColor={colors.maroon} />
+          {latestPostsLocation.map((location, index) => (
+            <Marker
+              key={`${location.lat}-${location.lng}-${index}`}
+              coordinate={{ latitude: location.lat, longitude: location.lng }}
+              title="Localização de uma conversa recente"
+              pinColor={colors.pink}
+            />
+          ))}
         </MapView>
 
         <View style={[styles.topo, { top: insets.top + 12 }]}>
