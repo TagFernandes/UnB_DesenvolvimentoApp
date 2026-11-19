@@ -28,6 +28,7 @@ export type Ocorrencia = { label: string; value: number };
 export type LocationRegiao = {
   lat: number;
   lng: number;
+  conversationId?: string;
 };
 
 export type PerfilRegiao = {
@@ -98,6 +99,13 @@ function locaisPosts(valor: unknown): LocationRegiao[] {
       typeof bruto.lng === 'number' &&
       Number.isFinite(bruto.lng)
     );
+  }).map((item) => {
+    const bruto = objeto(item);
+    return {
+      lat: bruto.lat as number,
+      lng: bruto.lng as number,
+      conversationId: typeof bruto.conversationId === 'string' ? bruto.conversationId : undefined,
+    };
   }).slice(-3);
 }
 

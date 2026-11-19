@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +12,7 @@ type Props = {
   nome?: string;
   lat: number;
   lng: number;
+  regionId?: string;
   latestPostsLocation?: LocationRegiao[];
   onFechar: () => void;
 };
@@ -24,10 +26,21 @@ export default function MapaTelaCheia({
   nome,
   lat,
   lng,
+  regionId,
   latestPostsLocation = [],
   onFechar,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  function abrirConversa(conversationId: string) {
+    if (!regionId) return;
+    onFechar();
+    router.push({
+      pathname: '/conversa',
+      params: { conversationId, regionId },
+    });
+  }
 
   return (
     <Modal
@@ -49,14 +62,22 @@ export default function MapaTelaCheia({
           toolbarEnabled={false}
         >
           <Marker coordinate={{ latitude: lat, longitude: lng }} title={nome} pinColor={colors.maroon} />
-          {latestPostsLocation.map((location, index) => (
+          {latestPostsLocation.map((location, index) => {
+            const conversationId = location.conversationId;
+            return (
             <Marker
               key={`${location.lat}-${location.lng}-${index}`}
               coordinate={{ latitude: location.lat, longitude: location.lng }}
               title="Localização de uma conversa recente"
               pinColor={colors.pink}
+              onPress={
+                conversationId
+                  ? () => abrirConversa(conversationId)
+                  : undefined
+              }
             />
-          ))}
+            );
+          })}
         </MapView>
 
         <View style={[styles.topo, { top: insets.top + 12 }]}>

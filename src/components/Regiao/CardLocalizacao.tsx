@@ -9,6 +9,7 @@ import { colors, fonts } from './tokens';
 
 type Props = {
   nome?: string;
+  regionId?: string;
   lat: number | null;
   lng: number | null;
   latestPostsLocation?: LocationRegiao[];
@@ -23,6 +24,7 @@ const DELTA_CARD = 0.06;
  */
 export default function CardLocalizacao({
   nome,
+  regionId,
   lat,
   lng,
   latestPostsLocation = [],
@@ -114,6 +116,7 @@ export default function CardLocalizacao({
           nome={nome}
           lat={lat}
           lng={lng}
+          regionId={regionId}
           latestPostsLocation={postsUnicos}
           onFechar={() => setExpandido(false)}
         />

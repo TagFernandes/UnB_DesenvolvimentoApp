@@ -148,7 +148,7 @@ export default function NovaConversaScreen(): React.JSX.Element {
           const dadosRegion = regionSnapshot.data();
           const locaisAtuais = Array.isArray(dadosRegion?.latest_posts_location)
             ? dadosRegion.latest_posts_location.filter(
-                (item): item is { lat: number; lng: number } =>
+                (item): item is { lat: number; lng: number; conversationId?: string } =>
                   !!item &&
                   typeof item === 'object' &&
                   typeof item.lat === 'number' &&
@@ -157,7 +157,10 @@ export default function NovaConversaScreen(): React.JSX.Element {
                   Number.isFinite(item.lng),
               )
             : [];
-          const filaAtualizada = [...locaisAtuais, location].slice(-3);
+          const filaAtualizada = [
+            ...locaisAtuais,
+            { ...location, conversationId: conversationRef.id },
+          ].slice(-3);
 
           transaction.set(
             regionRef,
