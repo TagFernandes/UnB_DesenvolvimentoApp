@@ -1,6 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  runTransaction,
+  serverTimestamp,
+} from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -51,6 +58,7 @@ export default function NovaConversaScreen(): React.JSX.Element {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [category, setCategory] = useState<CategoryCode>('general');
+  const [includeLocation, setIncludeLocation] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,27 +100,76 @@ export default function NovaConversaScreen(): React.JSX.Element {
     setSaving(true);
     try {
       if (!db) throw new Error('Firebase não está configurado.');
+      const firestore = db;
       const currentUser = auth?.currentUser;
       if (!currentUser) throw new Error('Entre na sua conta para publicar uma conversa.');
 
-      const profile = await getDoc(doc(db, 'users', currentUser.uid));
+      let location: { lat: number; lng: number } | undefined;
+      if (includeLocation) {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (permission.status !== 'granted') {
+          throw new Error('Permita o acesso à localização ou desmarque essa opção.');
+        }
+
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        location = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+      }
+
+      const profile = await getDoc(doc(firestore, 'users', currentUser.uid));
       const profileName = profile.data()?.nome;
       const authorName = typeof profileName === 'string' && profileName.trim()
         ? profileName.trim()
         : '-';
 
-      // Só a conversa é gravada: as regras não deixam o app atualizar regions/{id}, e o
-      // Fórum calcula os contadores a partir das conversas.
-      await setDoc(doc(collection(db, 'conversations')), {
-        region_id: selectedRegion.id,
-        category,
-        title: cleanTitle,
-        body: cleanBody,
-        author_name: authorName,
-        author_uid: currentUser.uid,
-        like_count: 0,
-        reply_count: 0,
-        created_at: serverTimestamp(),
+      const conversationRef = doc(collection(firestore, 'conversations'));
+
+      await runTransaction(firestore, async (transaction) => {
+        const conversationData = {
+          region_id: selectedRegion.id,
+          category,
+          title: cleanTitle,
+          body: cleanBody,
+          author_name: authorName,
+          author_uid: currentUser.uid,
+          like_count: 0,
+          reply_count: 0,
+          created_at: serverTimestamp(),
+          ...(location ? { location } : {}),
+        };
+
+        if (location) {
+          const regionRef = doc(firestore, 'regions', selectedRegion.id);
+          const regionSnapshot = await transaction.get(regionRef);
+          const dadosRegion = regionSnapshot.data();
+          const locaisAtuais = Array.isArray(dadosRegion?.latest_posts_location)
+            ? dadosRegion.latest_posts_location.filter(
+                (item): item is { lat: number; lng: number; conversationId?: string } =>
+                  !!item &&
+                  typeof item === 'object' &&
+                  typeof item.lat === 'number' &&
+                  Number.isFinite(item.lat) &&
+                  typeof item.lng === 'number' &&
+                  Number.isFinite(item.lng),
+              )
+            : [];
+          const filaAtualizada = [
+            ...locaisAtuais,
+            { ...location, conversationId: conversationRef.id },
+          ].slice(-3);
+
+          transaction.set(
+            regionRef,
+            { latest_posts_location: filaAtualizada },
+            { merge: true },
+          );
+        }
+
+        transaction.set(conversationRef, conversationData);
       });
 
       // Vindo da lista de conversas da RA, volta para ela (que recarrega ao ganhar foco)
@@ -214,6 +271,23 @@ export default function NovaConversaScreen(): React.JSX.Element {
             accessibilityLabel="Texto da conversa"
           />
 
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityLabel="Adicionar minha localização atual"
+            accessibilityState={{ checked: includeLocation }}
+            style={[styles.locationOption, includeLocation && styles.optionSelected]}
+            onPress={() => setIncludeLocation((current) => !current)}
+          >
+            <Text style={[styles.optionText, includeLocation && styles.optionTextSelected]}>
+              Adicionar minha localização atual
+            </Text>
+            <Ionicons
+              name={includeLocation ? 'checkbox' : 'square-outline'}
+              size={20}
+              color={colors.accent}
+            />
+          </Pressable>
+
           {error ? <Text style={styles.error} accessibilityLiveRegion="polite">{error}</Text> : null}
 
           <Pressable
@@ -254,6 +328,18 @@ const styles = StyleSheet.create({
   regionList: { gap: 8 },
   regionOption: {
     minHeight: 44,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  locationOption: {
+    minHeight: 44,
+    marginTop: 16,
     paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: colors.border,

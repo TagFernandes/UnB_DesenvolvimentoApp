@@ -1,15 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import MapView from 'react-native-maps';
+import MapView, { Marker } from 'react-native-maps';
 
+import type { LocationRegiao } from '../../lib/regioes';
 import MapaTelaCheia from './MapaTelaCheia';
 import { colors, fonts } from './tokens';
 
 type Props = {
-  nome: string;
+  nome?: string;
+  regionId?: string;
   lat: number | null;
   lng: number | null;
+  latestPostsLocation?: LocationRegiao[];
 };
 
 /** Zoom do card: o suficiente para mostrar a RA e o entorno. */
@@ -19,9 +22,36 @@ const DELTA_CARD = 0.06;
  * Prévia do mapa com o pin e o nome da RA. O mapa do card fica parado para não
  * brigar com o scroll da tela; tocar nele abre o mapa interativo em tela cheia.
  */
-export default function CardLocalizacao({ nome, lat, lng }: Props) {
+export default function CardLocalizacao({
+  nome,
+  regionId,
+  lat,
+  lng,
+  latestPostsLocation = [],
+}: Props) {
   const [expandido, setExpandido] = useState(false);
   const temCoordenadas = lat !== null && lng !== null;
+  const postsUnicos = latestPostsLocation
+    .filter((location, index, locations) => {
+      const coordenadasValidas =
+        Number.isFinite(location.lat) &&
+        Number.isFinite(location.lng) &&
+        location.lat >= -90 &&
+        location.lat <= 90 &&
+        location.lng >= -180 &&
+        location.lng <= 180;
+      const primeiroDuplicado =
+        locations.findIndex(
+          (item) => item.lat === location.lat && item.lng === location.lng,
+        ) === index;
+      const naoEhRegiaoPrincipal =
+        lat === null ||
+        lng === null ||
+        location.lat !== lat ||
+        location.lng !== lng;
+      return coordenadasValidas && primeiroDuplicado && naoEhRegiaoPrincipal;
+    })
+    .slice(0, 3);
 
   return (
     <>
@@ -50,7 +80,15 @@ export default function CardLocalizacao({ nome, lat, lng }: Props) {
               rotateEnabled={false}
               pitchEnabled={false}
               toolbarEnabled={false}
-            />
+            >
+              {postsUnicos.map((location, index) => (
+                <Marker
+                  key={`${location.lat}-${location.lng}-${index}`}
+                  coordinate={{ latitude: location.lat, longitude: location.lng }}
+                  pinColor={colors.pink}
+                />
+              ))}
+            </MapView>
           </View>
         )}
 
@@ -58,9 +96,11 @@ export default function CardLocalizacao({ nome, lat, lng }: Props) {
           <View style={styles.pin}>
             <Ionicons name="location-sharp" size={15} color={colors.white} />
           </View>
-          <View style={styles.etiqueta}>
-            <Text style={styles.nome}>{nome}</Text>
-          </View>
+          {nome ? (
+            <View style={styles.etiqueta}>
+              <Text style={styles.nome}>{nome}</Text>
+            </View>
+          ): null}
         </View>
 
         {temCoordenadas && (
@@ -76,6 +116,8 @@ export default function CardLocalizacao({ nome, lat, lng }: Props) {
           nome={nome}
           lat={lat}
           lng={lng}
+          regionId={regionId}
+          latestPostsLocation={postsUnicos}
           onFechar={() => setExpandido(false)}
         />
       )}
